@@ -1,0 +1,61 @@
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <Product Id="*"
+           Name="ImageHosting"
+           Manufacturer="Leonardo MA"
+           Version="1.0.1"
+           Language="1033"
+           Codepage="1252"
+           UpgradeCode="e736650d-6c6a-4339-92d0-661665098b17">
+
+    <Package InstallerVersion="200"
+             Compressed="yes"
+             Manufacturer="Leonardo MA"
+             Description="Local LAN image hosting service"
+             Keywords="ImageHosting,image,hosting,server"
+             Comments="ImageHosting MSI Installer" />
+
+    <Icon Id="appIcon" SourceFile="dist\ImageHosting\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="appIcon" />
+
+    <UIRef Id="WixUI_InstallDir" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed."
+                  AllowSameVersionUpgrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLDIR" Name="ImageHosting" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="StartMenuDir" Name="LDM Software" />
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="StartMenuDir">
+      <Component Id="StartMenuComponent" Guid="a1b2c3d4-e5f6-7890-abcd-ef1234567890">
+        <Shortcut Id="StartMenuShortcut"
+                  Name="ImageHosting"
+                  Description="Start ImageHosting server"
+                  Target="[INSTALLDIR]ImageHosting.exe"
+                  WorkingDirectory="INSTALLDIR" />
+        <Shortcut Id="StartMenuShortcutUninstall"
+                  Name="Uninstall ImageHosting"
+                  Description="Uninstall ImageHosting"
+                  Target="[System64Folder]msiexec.exe"
+                  Arguments="/x [ProductCode]" />
+        <RemoveFolder Id="RemoveStartMenuDir" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\ImageHosting"
+                       Name="installed" Type="integer" Value="1" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Complete" Level="1">
+      <ComponentGroupRef Id="HarvestedFiles" />
+      <ComponentRef Id="StartMenuComponent" />
+    </Feature>
+
+  </Product>
+</Wix>

@@ -1,0 +1,1619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0,0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='4' fill='%236c5ce7'/><text x='12' y='16' text-anchor='middle' font-size='14' fill='white' font-family='sans-serif'>IH</text></svg>">
+</head>
+<body>
+
+  <!-- ═══ Top App Bar (MD3) ═══ -->
+  <header class="top-app-bar">
+    <div class="top-app-bar__brand">
+      <span class="material-symbols-outlined top-app-bar__icon">photo_library</span>
+      <span class="top-app-bar__title">{{ title }}</span>
+    </div>
+    <div class="top-app-bar__trailing">
+      <button class="top-app-bar__settings-btn" id="settingsBtn" title="Settings">
+        <span class="material-symbols-outlined">settings</span>
+      </button>
+      <span class="md-chip md-chip--primary">:{{ port }}</span>
+      <span class="access-url" title="LAN access">http://{{ local_ip }}:{{ port }}</span>
+    </div>
+  </header>
+
+  <!-- ═══ Main Content ═══ -->
+  <main class="main-content">
+
+    <!-- Upload Card -->
+    <div class="upload-card" id="uploadZone">
+      <span class="material-symbols-outlined upload-card__icon">cloud_upload</span>
+      <div class="upload-card__text">
+        <strong>Click to upload</strong> or drag &amp; drop images here
+      </div>
+      <div class="upload-card__hint">PNG / JPG / GIF / WebP / SVG · Max {{ max_size_mb }} MB per file</div>
+      <input type="file" id="fileInput" multiple
+             accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml,image/bmp,image/x-icon">
+
+      <div class="upload-progress" id="uploadProgress">
+        <div class="upload-progress__track">
+          <div class="upload-progress__fill" id="progressFill"></div>
+        </div>
+        <div class="upload-progress__label" id="progressText">Uploading…</div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="toolbar__left">
+        <div class="group-select" id="groupSelect">
+          <button class="group-select__trigger" id="groupTrigger">
+            <span id="currentGroupLabel">{{ default_group }}</span>
+            <span class="material-symbols-outlined group-select__arrow" id="groupArrow">expand_more</span>
+          </button>
+          <div class="group-select__menu" id="groupMenu"></div>
+        </div>
+        <div class="search-box" id="searchBox">
+          <span class="material-symbols-outlined search-box__icon">search</span>
+          <input class="search-box__input" id="searchInput" type="text"
+                 placeholder="Search…" autocomplete="off">
+          <button class="search-box__clear" id="searchClear">
+            <span class="material-symbols-outlined" style="font-size:0.9rem;">close</span>
+          </button>
+          <div class="search-suggestions" id="searchSuggestions"></div>
+        </div>
+        <div class="sort-select" id="sortSelect">
+          <button class="sort-select__trigger" id="sortTrigger">
+            <span class="material-symbols-outlined sort-select__icon">sort_by_alpha</span>
+            <span class="sort-select__label" id="sortLabel">Name</span>
+            <span class="material-symbols-outlined sort-select__arrow">expand_more</span>
+          </button>
+          <div class="sort-select__menu" id="sortMenu"></div>
+        </div>
+        <button class="md-btn" id="selectToggle">
+          <span class="material-symbols-outlined md-btn__icon">checklist</span> Select
+        </button>
+        <div class="toolbar-select" id="toolbarSelect">
+          <span class="toolbar-select__count" id="selectCount">0 selected</span>
+          <button class="md-btn" id="selectAllBtn">
+            <span class="material-symbols-outlined md-btn__icon">select_all</span> All
+          </button>
+          <button class="md-btn" id="batchMoveBtn">
+            <span class="material-symbols-outlined md-btn__icon">drive_file_move</span> Move
+          </button>
+          <button class="md-btn md-btn--danger" id="batchDeleteBtn">
+            <span class="material-symbols-outlined md-btn__icon">delete</span> Delete
+          </button>
+          <button class="md-btn" id="selectCancel">
+            <span class="material-symbols-outlined md-btn__icon">close</span>
+          </button>
+        </div>
+      </div>
+      <span class="toolbar__count" id="imageCount"><strong>0</strong> images</span>
+    </div>
+
+    <!-- Image Grid -->
+    <div class="grid" id="imageGrid">
+      <div class="empty-state" id="emptyState">
+        <span class="material-symbols-outlined empty-state__icon">add_photo_alternate</span>
+        <div class="empty-state__title">No images yet</div>
+        <div class="empty-state__desc">Drop images above or click to start uploading</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ═══ Lightbox (MD3 Dialog) ═══ -->
+  <div class="lightbox" id="lightbox">
+    <button class="lightbox__close" id="lightboxClose" title="Close (Esc)">
+      <span class="material-symbols-outlined">close</span>
+    </button>
+    <button class="lightbox__nav lightbox__nav--prev" id="lightboxPrev" title="Previous (←)">
+      <span class="material-symbols-outlined">chevron_left</span>
+    </button>
+
+    <div class="lightbox__body">
+      <img class="lightbox__img" id="lightboxImg" src="" alt="preview">
+      <div class="lightbox__bar" id="lightboxBar">
+        <span class="lightbox__filename" id="lbFilename"></span>
+        <span class="lightbox__meta" id="lbMeta"></span>
+        <div class="lightbox__actions">
+          <button class="md-btn" id="lbRename" title="Rename">
+            <span class="material-symbols-outlined md-btn__icon">edit</span>
+          </button>
+          <button class="md-btn" id="lbMove" title="Move to group">
+            <span class="material-symbols-outlined md-btn__icon">drive_file_move</span>
+          </button>
+          <span class="lightbox__separator"></span>
+          <button class="md-btn" data-format="markdown" title="Copy Markdown">
+            <span class="material-symbols-outlined md-btn__icon">code</span> Markdown
+          </button>
+          <button class="md-btn" data-format="html" title="Copy HTML">
+            <span class="material-symbols-outlined md-btn__icon">code</span> HTML
+          </button>
+          <button class="md-btn" data-format="url" title="Copy URL">
+            <span class="material-symbols-outlined md-btn__icon">link</span> URL
+          </button>
+          <button class="md-btn md-btn--danger" id="lbDelete">
+            <span class="material-symbols-outlined md-btn__icon">delete</span> Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <button class="lightbox__nav lightbox__nav--next" id="lightboxNext" title="Next (→)">
+      <span class="material-symbols-outlined">chevron_right</span>
+    </button>
+  </div>
+
+  <!-- ═══ Confirm Dialog (MD3) ═══ -->
+  <div class="dialog-overlay" id="confirmDialog">
+    <div class="dialog">
+      <div class="dialog__title">Confirm Delete</div>
+      <div class="dialog__content" id="confirmText">Delete this image? This cannot be undone.</div>
+      <div class="dialog__actions">
+        <button class="md-btn" id="confirmCancel">Cancel</button>
+        <button class="md-btn md-btn--danger" id="confirmOk">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Create Group Dialog ═══ -->
+  <div class="dialog-overlay" id="createGroupDialog">
+    <div class="dialog">
+      <div class="dialog__title">New Group</div>
+      <div class="dialog__content">
+        <input class="dialog__input" id="newGroupInput"
+               placeholder="Enter group name" maxlength="64" autocomplete="off">
+        <div style="margin-top:6px;font-size:0.78rem;color:var(--md-outline);">
+          Letters, numbers, underscores, hyphens only
+        </div>
+      </div>
+      <div class="dialog__actions">
+        <button class="md-btn" id="createGroupCancel">Cancel</button>
+        <button class="md-btn md-btn--filled" id="createGroupOk">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Snackbar Container ═══ -->
+  <div class="snackbar-container" id="snackbarContainer"></div>
+
+  <!-- ═══ Settings Dialog ═══ -->
+  <div class="dialog-overlay" id="settingsDialog">
+    <div class="dialog dialog--wide">
+      <div class="dialog__title">Settings</div>
+      <div class="dialog__content">
+        <label style="display:block;font-size:0.82rem;font-weight:500;margin-bottom:6px;color:var(--md-on-surface-variant);">
+          Image Storage Root Directory
+        </label>
+        <div class="dialog__input-row">
+          <input class="dialog__input" id="settingsDataDir"
+                 placeholder="C:\Path\To\Images" autocomplete="off" style="flex:1;">
+          <button class="md-btn" id="browseBtn" title="Browse folders">
+            <span class="material-symbols-outlined md-btn__icon">folder_open</span> Browse
+          </button>
+        </div>
+        <div style="margin-top:6px;font-size:0.78rem;color:var(--md-outline);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span>Changes apply immediately. Existing images are migrated automatically.</span>
+        </div>
+        <div id="settingsError" style="display:none;margin-top:10px;padding:10px 14px;border-radius:8px;background:rgba(242,184,181,0.1);color:var(--md-error);font-size:0.85rem;"></div>
+      </div>
+      <div class="dialog__actions">
+        <button class="md-btn" id="settingsCancel">Cancel</button>
+        <button class="md-btn md-btn--filled" id="settingsSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Rename Dialog ═══ -->
+  <div class="dialog-overlay" id="renameDialog">
+    <div class="dialog">
+      <div class="dialog__title">Rename Image</div>
+      <div class="dialog__content">
+        <input class="dialog__input" id="renameInput"
+               placeholder="New filename" maxlength="128" autocomplete="off">
+        <div style="margin-top:6px;font-size:0.78rem;color:var(--md-outline);">
+          Extension must remain the same
+        </div>
+      </div>
+      <div class="dialog__actions">
+        <button class="md-btn" id="renameCancel">Cancel</button>
+        <button class="md-btn md-btn--filled" id="renameOk">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Upload Rename Dialog ═══ -->
+  <div class="dialog-overlay" id="uploadRenameDialog">
+    <div class="dialog dialog--wide">
+      <div class="dialog__title">Upload Files</div>
+      <div class="dialog__content">
+        <div id="uploadFileList" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+        <div style="margin-top:8px;font-size:0.78rem;color:var(--md-outline);text-align:center;">
+          Original extension is preserved if you change only the name
+        </div>
+      </div>
+      <div class="dialog__actions">
+        <button class="md-btn" id="uploadRenameCancel">Cancel</button>
+        <button class="md-btn md-btn--filled" id="uploadRenameOk">Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Move to Group Dialog ═══ -->
+  <div class="dialog-overlay" id="moveDialog">
+    <div class="dialog dialog--wide">
+      <div class="dialog__title">Move to Group</div>
+      <div class="dialog__content">
+        <div style="font-size:0.88rem;color:var(--md-on-surface-variant);margin-bottom:12px;">
+          Select the target group for <strong id="moveFilenameLabel"></strong>:
+        </div>
+        <div class="group-radio-list" id="moveGroupList"></div>
+      </div>
+      <div class="dialog__actions">
+        <button class="md-btn" id="moveCancel">Cancel</button>
+        <button class="md-btn md-btn--filled" id="moveOk">Move</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ JavaScript ═══ -->
+  <script>
+  (function() {
+    'use strict';
+
+    // ── State ────────────────────────────────────
+
+    const DEFAULT_GROUP = '{{ default_group }}';
+    let currentGroup = DEFAULT_GROUP;
+    let images = [];
+    let currentIndex = -1;
+    let isLoading = false;
+    let isSelectMode = false;
+    let selectedSet = new Set();
+    let searchQuery = '';
+    let pendingUploadFiles = null; // FileList held before rename dialog confirm
+    let allImages = []; // unfiltered full list
+    let sortMode = 'name'; // 'name' | 'time'
+    let sortAsc = true;    // true=A-Z/oldest, false=Z-A/newest
+
+    // ── DOM refs ─────────────────────────────────
+
+    const $ = id => document.getElementById(id);
+    const grid = $('imageGrid');
+    const emptyState = $('emptyState');
+    const imageCount = $('imageCount');
+    const uploadZone = $('uploadZone');
+    const fileInput = $('fileInput');
+    const uploadProgress = $('uploadProgress');
+    const progressFill = $('progressFill');
+    const progressText = $('progressText');
+
+    const lightbox = $('lightbox');
+    const lightboxImg = $('lightboxImg');
+    const lbFilename = $('lbFilename');
+    const lbMeta = $('lbMeta');
+    const lbDelete = $('lbDelete');
+    const lightboxClose = $('lightboxClose');
+    const lightboxPrev = $('lightboxPrev');
+    const lightboxNext = $('lightboxNext');
+
+    const confirmDialog = $('confirmDialog');
+    const confirmText = $('confirmText');
+    const confirmCancel = $('confirmCancel');
+    const confirmOk = $('confirmOk');
+
+    const createGroupDialog = $('createGroupDialog');
+    const newGroupInput = $('newGroupInput');
+    const createGroupCancel = $('createGroupCancel');
+    const createGroupOk = $('createGroupOk');
+
+    const groupSelect = $('groupSelect');
+    const groupTrigger = $('groupTrigger');
+    const groupMenu = $('groupMenu');
+    const groupArrow = $('groupArrow');
+    const currentGroupLabel = $('currentGroupLabel');
+
+    const snackbarContainer = $('snackbarContainer');
+
+    const lbRename = $('lbRename');
+    const lbMove = $('lbMove');
+    const renameDialog = $('renameDialog');
+    const renameInput = $('renameInput');
+    const renameCancel = $('renameCancel');
+    const renameOk = $('renameOk');
+    const moveDialog = $('moveDialog');
+    const moveFilenameLabel = $('moveFilenameLabel');
+    const moveGroupList = $('moveGroupList');
+    const moveCancel = $('moveCancel');
+    const moveOk = $('moveOk');
+
+    const selectToggle = $('selectToggle');
+    const toolbarSelect = $('toolbarSelect');
+    const selectCount = $('selectCount');
+    const selectCancel = $('selectCancel');
+    const selectAllBtn = $('selectAllBtn');
+    const batchMoveBtn = $('batchMoveBtn');
+    const batchDeleteBtn = $('batchDeleteBtn');
+    const uploadRenameDialog = $('uploadRenameDialog');
+    const uploadFileList = $('uploadFileList');
+    const uploadRenameCancel = $('uploadRenameCancel');
+    const uploadRenameOk = $('uploadRenameOk');
+
+    const searchInput = $('searchInput');
+    const searchClear = $('searchClear');
+    const searchSuggestions = $('searchSuggestions');
+    const sortTrigger = $('sortTrigger');
+    const sortLabel = $('sortLabel');
+    const sortMenu = $('sortMenu');
+    const sortArrow = document.querySelector('.sort-select__arrow');
+
+    const settingsBtn = $('settingsBtn');
+    const settingsDialog = $('settingsDialog');
+    const settingsDataDir = $('settingsDataDir');
+    const settingsCancel = $('settingsCancel');
+    const settingsError = $('settingsError');
+    const settingsSave = $('settingsSave');
+    const browseBtn = $('browseBtn');
+
+    let pendingDelete = null;
+    let pendingDeleteGroup = null;
+
+    // ── Snackbar ─────────────────────────────────
+
+    const SNACKBAR_ICONS = {
+      success: 'check_circle',
+      error: 'error',
+      info: 'info',
+    };
+
+    function snackbar(message, type = 'info') {
+      const icon = SNACKBAR_ICONS[type] || 'info';
+      const el = document.createElement('div');
+      el.className = `snackbar snackbar--${type}`;
+      el.innerHTML = `<span class="material-symbols-outlined snackbar__icon">${icon}</span><span>${message}</span>`;
+      snackbarContainer.appendChild(el);
+      setTimeout(() => {
+        el.style.transition = 'opacity 0.3s, transform 0.3s';
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(16px) scale(0.95)';
+        setTimeout(() => el.remove(), 300);
+      }, 3000);
+    }
+
+    // ── Group API ─────────────────────────────────
+
+    async function loadGroups() {
+      try {
+        const res = await fetch('/api/groups');
+        const groups = await res.json();
+        renderGroupMenu(groups);
+        return groups;
+      } catch (err) {
+        snackbar('Failed to load groups: ' + err.message, 'error');
+        return [];
+      }
+    }
+
+    function renderGroupMenu(groups) {
+      let html = '';
+      for (const g of groups) {
+        const isActive = g.name === currentGroup;
+        const isDefault = g.name === DEFAULT_GROUP;
+        html += `
+          <div class="group-select__item ${isActive ? 'active' : ''}"
+               data-group="${g.name}">
+            <span class="material-symbols-outlined group-select__item-icon">folder</span>
+            <span class="group-select__item-name">${g.name}</span>
+            <span class="group-select__item-count">${g.count}</span>
+            <span class="material-symbols-outlined group-select__item-check">check</span>
+            ${!isDefault ? `<button class="group-select__item-delete" data-group="${g.name}" title="Delete group">
+              <span class="material-symbols-outlined" style="font-size:1rem;">delete</span>
+            </button>` : ''}
+          </div>
+        `;
+      }
+      html += `
+        <div class="group-select__divider"></div>
+        <div class="group-select__new" id="groupNewBtn">
+          <span class="material-symbols-outlined">add</span>
+          <span>New Group</span>
+        </div>
+      `;
+      groupMenu.innerHTML = html;
+
+      // Click group item to switch
+      groupMenu.querySelectorAll('.group-select__item').forEach(el => {
+        el.addEventListener('click', (e) => {
+          if (e.target.closest('.group-select__item-delete')) return;
+          const name = el.dataset.group;
+          if (name !== currentGroup) switchGroup(name);
+          closeGroupMenu();
+        });
+      });
+
+      // Delete group buttons
+      groupMenu.querySelectorAll('.group-select__item-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const name = btn.dataset.group;
+          promptDeleteGroup(name);
+        });
+      });
+
+      // New group button
+      const newBtn = groupMenu.querySelector('#groupNewBtn');
+      if (newBtn) {
+        newBtn.addEventListener('click', () => {
+          closeGroupMenu();
+          openCreateGroupDialog();
+        });
+      }
+    }
+
+    async function switchGroup(name) {
+      if (name === currentGroup) return;
+      // Exit selection mode and clear search on group switch
+      if (isSelectMode) exitSelectMode();
+      if (searchQuery) {
+        searchInput.value = '';
+        searchQuery = '';
+      }
+      // Reset sort to default (Name A–Z)
+      sortMode = 'name';
+      sortAsc = true;
+      sortLabel.textContent = 'Name';
+      currentGroup = name;
+      currentGroupLabel.textContent = name;
+      closeGroupMenu();
+      await loadImages();
+      loadGroups();
+    }
+
+    async function createGroup(name) {
+      try {
+        const res = await fetch('/api/groups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          snackbar(data.error, 'error');
+          return false;
+        }
+        snackbar(`Created group "${name}"`, 'success');
+        await loadGroups();
+        await switchGroup(name);
+        return true;
+      } catch (err) {
+        snackbar('Failed to create group: ' + err.message, 'error');
+        return false;
+      }
+    }
+
+    async function deleteGroup(name) {
+      try {
+        const res = await fetch(`/api/groups/${encodeURIComponent(name)}`, {
+          method: 'DELETE',
+        });
+        const data = await res.json();
+        if (data.error) {
+          snackbar(data.error, 'error');
+          return false;
+        }
+        snackbar(`Deleted group "${name}"`, 'success');
+        if (currentGroup === name) {
+          await switchGroup(DEFAULT_GROUP);
+        } else {
+          await loadGroups();
+        }
+        return true;
+      } catch (err) {
+        snackbar('Failed to delete group: ' + err.message, 'error');
+        return false;
+      }
+    }
+
+    function promptDeleteGroup(name) {
+      pendingDeleteGroup = name;
+      confirmText.textContent = `Delete group "${name}" and all its images? This cannot be undone.`;
+      confirmDialog.classList.add('active');
+    }
+
+    // ── Group UI ──────────────────────────────────
+
+    function toggleGroupMenu() {
+      const isOpen = groupMenu.classList.contains('open');
+      if (isOpen) {
+        closeGroupMenu();
+      } else {
+        openGroupMenu();
+      }
+    }
+
+    function openGroupMenu() {
+      groupMenu.classList.add('open');
+      groupArrow.classList.add('open');
+      loadGroups();
+    }
+
+    function closeGroupMenu() {
+      groupMenu.classList.remove('open');
+      groupArrow.classList.remove('open');
+    }
+
+    groupTrigger.addEventListener('click', toggleGroupMenu);
+
+    document.addEventListener('click', (e) => {
+      if (!groupSelect.contains(e.target)) {
+        closeGroupMenu();
+      }
+    });
+
+    // ── Create Group Dialog ───────────────────────
+
+    function openCreateGroupDialog() {
+      newGroupInput.value = '';
+      createGroupDialog.classList.add('active');
+      setTimeout(() => newGroupInput.focus(), 100);
+    }
+
+    function closeCreateGroupDialog() {
+      createGroupDialog.classList.remove('active');
+    }
+
+    createGroupCancel.addEventListener('click', closeCreateGroupDialog);
+    createGroupOk.addEventListener('click', async () => {
+      const name = newGroupInput.value.trim();
+      if (!name) {
+        snackbar('Please enter a group name', 'error');
+        return;
+      }
+      closeCreateGroupDialog();
+      await createGroup(name);
+    });
+
+    newGroupInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') createGroupOk.click();
+      if (e.key === 'Escape') closeCreateGroupDialog();
+    });
+
+    createGroupDialog.addEventListener('click', (e) => {
+      if (e.target === createGroupDialog) closeCreateGroupDialog();
+    });
+
+    // ── Load Images ───────────────────────────────
+
+    async function loadImages() {
+      if (isLoading) return;
+      isLoading = true;
+      try {
+        const res = await fetch(`/api/images?group=${encodeURIComponent(currentGroup)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        allImages = await res.json();
+        applyFilter();
+      } catch (err) {
+        snackbar('Failed to load: ' + err.message, 'error');
+      } finally {
+        isLoading = false;
+      }
+    }
+
+    // ── Search / Filter ────────────────────────────
+
+    function applyFilter() {
+      const q = searchQuery.trim().toLowerCase();
+      let filtered = !q ? [...allImages] : allImages.filter(img =>
+        img.filename.toLowerCase().includes(q)
+      );
+      // Sort
+      filtered.sort((a, b) => {
+        let cmp;
+        if (sortMode === 'name') {
+          cmp = a.filename.localeCompare(b.filename);
+        } else {
+          cmp = new Date(a.created) - new Date(b.created);
+        }
+        return sortAsc ? cmp : -cmp;
+      });
+      images = filtered;
+      renderGrid();
+    }
+
+    function showSuggestions() {
+      const q = searchInput.value.trim().toLowerCase();
+      if (!q || allImages.length === 0) {
+        searchSuggestions.classList.remove('open');
+        return;
+      }
+
+      // Find matching images (max 10)
+      const matches = allImages
+        .filter(img => img.filename.toLowerCase().includes(q))
+        .slice(0, 10);
+
+      if (matches.length === 0) {
+        searchSuggestions.classList.remove('open');
+        return;
+      }
+
+      // Highlight matching text
+      const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      let html = '';
+      for (const m of matches) {
+        const highlighted = m.filename.replace(re, '<mark>$1</mark>');
+        html += `
+          <div class="search-suggestion" data-filename="${m.filename}">
+            <span class="material-symbols-outlined suggestion-icon">image</span>
+            <span class="suggestion-name">${highlighted}</span>
+            <span class="suggestion-meta">${m.formatted_size}</span>
+          </div>`;
+      }
+      searchSuggestions.innerHTML = html;
+      searchSuggestions.classList.add('open');
+
+      // Click suggestion → fill search
+      searchSuggestions.querySelectorAll('.search-suggestion').forEach(el => {
+        el.addEventListener('click', () => {
+          searchInput.value = el.dataset.filename;
+          searchSuggestions.classList.remove('open');
+          searchQuery = el.dataset.filename;
+          applyFilter();
+          searchInput.focus();
+        });
+      });
+    }
+
+    function hideSuggestions() {
+      searchSuggestions.classList.remove('open');
+    }
+
+    searchInput.addEventListener('input', () => {
+      searchQuery = searchInput.value;
+      applyFilter();
+      showSuggestions();
+    });
+
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value.trim()) showSuggestions();
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+      const suggestions = searchSuggestions.querySelectorAll('.search-suggestion');
+      if (!suggestions.length) return;
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const active = searchSuggestions.querySelector('.search-suggestion.active');
+        let next;
+        if (!active) {
+          next = e.key === 'ArrowDown' ? suggestions[0] : suggestions[suggestions.length - 1];
+        } else {
+          const idx = Array.from(suggestions).indexOf(active);
+          next = e.key === 'ArrowDown'
+            ? suggestions[Math.min(idx + 1, suggestions.length - 1)]
+            : suggestions[Math.max(idx - 1, 0)];
+        }
+        if (active) active.classList.remove('active');
+        next.classList.add('active');
+        next.scrollIntoView({ block: 'nearest' });
+      }
+
+      if (e.key === 'Enter') {
+        const active = searchSuggestions.querySelector('.search-suggestion.active');
+        if (active) {
+          e.preventDefault();
+          searchInput.value = active.dataset.filename;
+          hideSuggestions();
+          searchQuery = active.dataset.filename;
+          applyFilter();
+        }
+      }
+
+      if (e.key === 'Escape') hideSuggestions();
+    });
+
+    searchClear.addEventListener('click', () => {
+      searchInput.value = '';
+      searchQuery = '';
+      hideSuggestions();
+      applyFilter();
+      searchInput.focus();
+    });
+
+    // Click outside closes suggestions
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-box')) {
+        hideSuggestions();
+      }
+    });
+
+    // ── Sort ───────────────────────────────────────
+
+    const SORT_OPTIONS = [
+      { mode: 'name', asc: true, label: 'Name A–Z', icon: 'sort_by_alpha' },
+      { mode: 'name', asc: false, label: 'Name Z–A', icon: 'sort_by_alpha' },
+      { mode: 'time', asc: false, label: 'Newest first', icon: 'schedule' },
+      { mode: 'time', asc: true, label: 'Oldest first', icon: 'schedule' },
+    ];
+
+    function renderSortMenu() {
+      sortMenu.innerHTML = SORT_OPTIONS.map(opt => {
+        const active = opt.mode === sortMode && opt.asc === sortAsc;
+        return `
+          <div class="sort-select__item ${active ? 'active' : ''}"
+               data-mode="${opt.mode}" data-asc="${opt.asc}">
+            <span class="material-symbols-outlined sort-item-icon">${opt.icon}</span>
+            <span class="sort-item-label">${opt.label}</span>
+            <span class="material-symbols-outlined sort-item-check">check</span>
+          </div>`;
+      }).join('');
+
+      sortMenu.querySelectorAll('.sort-select__item').forEach(el => {
+        el.addEventListener('click', () => {
+          sortMode = el.dataset.mode;
+          sortAsc = el.dataset.asc === 'true';
+          sortLabel.textContent = SORT_OPTIONS.find(
+            o => o.mode === sortMode && o.asc === sortAsc
+          )?.label.split(' ')[0] || 'Name';
+          closeSortMenu();
+          applyFilter();
+        });
+      });
+    }
+
+    function toggleSortMenu() {
+      const isOpen = sortMenu.classList.contains('open');
+      if (isOpen) closeSortMenu();
+      else openSortMenu();
+    }
+
+    function openSortMenu() {
+      renderSortMenu();
+      sortMenu.classList.add('open');
+      if (sortArrow) sortArrow.classList.add('open');
+    }
+
+    function closeSortMenu() {
+      sortMenu.classList.remove('open');
+      if (sortArrow) sortArrow.classList.remove('open');
+    }
+
+    sortTrigger.addEventListener('click', toggleSortMenu);
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.sort-select')) closeSortMenu();
+    });
+
+    // ── Render Grid ───────────────────────────────
+
+    function renderGrid() {
+      grid.querySelectorAll('.md-card').forEach(c => c.remove());
+
+      if (images.length === 0) {
+        emptyState.style.display = 'flex';
+        const total = allImages.length;
+        imageCount.innerHTML = total > 0 ? `<strong>0</strong> / ${total} images` : '<strong>0</strong> images';
+        return;
+      }
+
+      emptyState.style.display = 'none';
+      const total = allImages.length;
+      const filtered = searchQuery ? `<strong>${images.length}</strong> / ${total} images` : `<strong>${images.length}</strong> images`;
+      imageCount.innerHTML = filtered;
+
+      images.forEach((img, index) => {
+        const card = document.createElement('div');
+        card.className = 'md-card';
+        card.style.animationDelay = `${(index % 24) * 40}ms`;
+
+        const sizeLabel = img.width && img.height
+          ? `${img.width}×${img.height} · ${img.formatted_size}`
+          : img.formatted_size;
+
+        card.dataset.index = index;
+        card.innerHTML = `
+          <div class="md-card__check" data-check="${index}">
+            <span class="material-symbols-outlined">check</span>
+          </div>
+          <img class="md-card__media" src="${img.thumbnail_url}"
+               alt="${img.filename}" loading="lazy"
+               onerror="this.src='${img.url}'">
+          <div class="md-card__content">
+            <div class="md-card__title" title="${img.filename}">${img.filename}</div>
+            <div class="md-card__subtitle">
+              <span>${sizeLabel}</span>
+              <span>${img.created_formatted}</span>
+            </div>
+          </div>
+          <div class="md-card__actions">
+            <button class="md-icon-btn" data-action="copy" data-index="${index}" title="Copy link">
+              <span class="material-symbols-outlined">link</span>
+            </button>
+            <button class="md-icon-btn md-icon-btn--danger" data-action="delete" data-index="${index}" title="Delete">
+              <span class="material-symbols-outlined">delete</span>
+            </button>
+          </div>
+        `;
+
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.md-card__actions')) return;
+          if (isSelectMode) {
+            toggleSelect(index);
+          } else {
+            openLightbox(index);
+          }
+        });
+
+        grid.appendChild(card);
+      });
+      // Delegate copy/delete icon-button clicks
+      grid.addEventListener('click', function iconBtnHandler(e) {
+        const btn = e.target.closest('.md-icon-btn');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const idx = parseInt(btn.dataset.index, 10);
+        if (action === 'copy' && images[idx]) copyLink(idx);
+        if (action === 'delete' && images[idx]) promptDelete(idx);
+      });
+    }
+
+    // ── Upload Rename Dialog ───────────────────────
+
+    function showUploadRenameDialog(files) {
+      if (!files || files.length === 0) return;
+      // Convert FileList to array so it doesn't get invalidated
+      pendingUploadFiles = Array.from(files);
+
+      // Build the file list with editable names
+      let html = '';
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        if (!f || !f.name) continue;
+        const ext = f.name.lastIndexOf('.') > 0 ? f.name.slice(f.name.lastIndexOf('.')) : '';
+        const base = ext ? f.name.slice(0, f.name.lastIndexOf('.')) : f.name;
+        html += `
+          <div class="upload-file-row">
+            <span class="material-symbols-outlined file-icon">image</span>
+            <span class="file-orig" title="${f.name}">${f.name}</span>
+            <span class="material-symbols-outlined file-arrow">arrow_forward</span>
+            <input class="dialog__input" data-idx="${i}" value="${base}"
+                   placeholder="filename" autocomplete="off" data-ext="${ext}">
+          </div>`;
+      }
+      uploadFileList.innerHTML = html;
+      uploadRenameOk.textContent = `Upload (${files.length} file${files.length > 1 ? 's' : ''})`;
+      uploadRenameDialog._customNames = null;
+      uploadRenameDialog.classList.add('active');
+      // Focus first input
+      const first = uploadFileList.querySelector('.dialog__input');
+      if (first) setTimeout(() => first.focus(), 150);
+    }
+
+    function closeUploadRenameDialog() {
+      uploadRenameDialog.classList.remove('active');
+      pendingUploadFiles = null;
+    }
+
+    uploadRenameCancel.addEventListener('click', closeUploadRenameDialog);
+    uploadRenameDialog.addEventListener('click', (e) => {
+      if (e.target === uploadRenameDialog) closeUploadRenameDialog();
+    });
+
+    uploadRenameOk.addEventListener('click', () => {
+      const files = pendingUploadFiles;
+      if (!files || files.length === 0) return;
+
+      // Collect custom names
+      const customNames = [];
+      uploadFileList.querySelectorAll('.dialog__input').forEach(inp => {
+        const val = inp.value.trim();
+        const ext = inp.dataset.ext || '';
+        if (val) {
+          customNames.push(val + ext);
+        } else {
+          const idx = parseInt(inp.dataset.idx, 10);
+          customNames.push(files[idx]?.name || '');
+        }
+      });
+
+      closeUploadRenameDialog();
+      uploadFiles(files, customNames);
+    });
+
+    // ── Upload ────────────────────────────────────
+
+    async function uploadFiles(files, customNames) {
+      if (!files || files.length === 0) return;
+
+      const formData = new FormData();
+      for (const file of files) {
+        formData.append('files', file);
+      }
+      // Send custom filenames if provided
+      if (customNames && customNames.length > 0) {
+        formData.append('filenames', JSON.stringify(customNames));
+      }
+
+      uploadProgress.classList.add('active');
+      progressFill.style.width = '0%';
+      progressText.textContent = `Uploading ${files.length} file(s)…`;
+
+      try {
+        const xhr = new XMLHttpRequest();
+        const promise = new Promise((resolve, reject) => {
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+              progressFill.style.width = Math.round((e.loaded / e.total) * 100) + '%';
+            }
+          });
+          xhr.addEventListener('load', () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try { resolve(JSON.parse(xhr.responseText)); }
+              catch { reject(new Error('Failed to parse response')); }
+            } else {
+              try {
+                const err = JSON.parse(xhr.responseText);
+                reject(new Error(err.error || `HTTP ${xhr.status}`));
+              } catch {
+                reject(new Error(`Upload failed (HTTP ${xhr.status})`));
+              }
+            }
+          });
+          xhr.addEventListener('error', () => reject(new Error('Network error')));
+          xhr.open('POST', `/api/upload?group=${encodeURIComponent(currentGroup)}`);
+          xhr.send(formData);
+        });
+
+        const result = await promise;
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Upload complete ✓';
+
+        if (result.uploaded && result.uploaded.length > 0) {
+          snackbar(`Uploaded ${result.uploaded.length} image(s)`, 'success');
+        }
+        if (result.errors && result.errors.length > 0) {
+          result.errors.forEach(e => snackbar(`${e.filename}: ${e.error}`, 'error'));
+        }
+
+        await loadImages();
+        loadGroups();
+
+      } catch (err) {
+        snackbar('Upload failed: ' + err.message, 'error');
+      } finally {
+        setTimeout(() => {
+          uploadProgress.classList.remove('active');
+          progressFill.style.width = '0%';
+        }, 1500);
+      }
+    }
+
+    // ── Upload Events ─────────────────────────────
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        showUploadRenameDialog(fileInput.files);
+        fileInput.value = '';
+      }
+    });
+
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) {
+        showUploadRenameDialog(e.dataTransfer.files);
+      }
+    });
+
+    // ── Lightbox ─────────────────────────────────
+
+    function openLightbox(index) {
+      if (index < 0 || index >= images.length) return;
+      currentIndex = index;
+      const img = images[index];
+      lightboxImg.src = img.url;
+      lbFilename.textContent = img.filename;
+      const dims = img.width && img.height ? `${img.width}×${img.height} · ` : '';
+      lbMeta.textContent = `${dims}${img.formatted_size} · ${img.created_formatted}`;
+      lightbox.classList.add('active');
+      document.body.style.overflow = 'hidden';
+      updateNavButtons();
+    }
+
+    function closeLightbox() {
+      lightbox.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+
+    function updateNavButtons() {
+      lightboxPrev.style.display = currentIndex > 0 ? '' : 'none';
+      lightboxNext.style.display = currentIndex < images.length - 1 ? '' : 'none';
+    }
+
+    function navLightbox(delta) {
+      const idx = currentIndex + delta;
+      if (idx >= 0 && idx < images.length) {
+        openLightbox(idx);
+      }
+    }
+
+    lightboxClose.addEventListener('click', closeLightbox);
+    lightboxPrev.addEventListener('click', () => navLightbox(-1));
+    lightboxNext.addEventListener('click', () => navLightbox(1));
+
+    document.addEventListener('keydown', (e) => {
+      if (!lightbox.classList.contains('active')) return;
+      // Don't navigate lightbox when a dialog is open
+      if (document.querySelector('.dialog-overlay.active')) return;
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') navLightbox(-1);
+      if (e.key === 'ArrowRight') navLightbox(1);
+    });
+
+    lightbox.addEventListener('click', (e) => {
+      if (e.target === lightbox) closeLightbox();
+    });
+
+    lbDelete.addEventListener('click', () => {
+      if (currentIndex >= 0) promptDelete(currentIndex);
+    });
+
+    // ── Rename ─────────────────────────────────────
+
+    lbRename.addEventListener('click', () => {
+      if (currentIndex < 0) return;
+      const img = images[currentIndex];
+      renameInput.value = img.filename;
+      renameDialog.classList.add('active');
+      setTimeout(() => {
+        renameInput.focus();
+        // Select the name without extension
+        const dot = img.filename.lastIndexOf('.');
+        if (dot > 0) renameInput.setSelectionRange(0, dot);
+      }, 150);
+    });
+
+    renameCancel.addEventListener('click', () => {
+      renameDialog.classList.remove('active');
+    });
+
+    renameDialog.addEventListener('click', (e) => {
+      if (e.target === renameDialog) renameDialog.classList.remove('active');
+    });
+
+    renameOk.addEventListener('click', async () => {
+      if (currentIndex < 0) return;
+      const img = images[currentIndex];
+      const newName = renameInput.value.trim();
+      if (!newName) {
+        snackbar('Please enter a filename', 'error');
+        return;
+      }
+      if (newName === img.filename) {
+        renameDialog.classList.remove('active');
+        return;
+      }
+
+      renameOk.disabled = true;
+      renameOk.textContent = 'Renaming…';
+
+      try {
+        const res = await fetch(
+          `/api/image/${encodeURIComponent(img.filename)}/rename?group=${encodeURIComponent(currentGroup)}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_name: newName }),
+          }
+        );
+        const data = await res.json();
+        if (data.error) {
+          snackbar('Rename failed: ' + data.error, 'error');
+          return;
+        }
+        snackbar('Renamed to ' + data.filename, 'success');
+        renameDialog.classList.remove('active');
+        // Update lightbox immediately
+        if (data.info && currentIndex >= 0) {
+          images[currentIndex] = data.info;
+          lbFilename.textContent = data.info.filename;
+          const dims = data.info.width && data.info.height
+            ? `${data.info.width}×${data.info.height} · ` : '';
+          lbMeta.textContent = `${dims}${data.info.formatted_size} · ${data.info.created_formatted}`;
+          lightboxImg.src = data.info.url;
+        }
+        const newFilename = data.filename;
+        await loadImages();
+        // Resync currentIndex: find the renamed image in the new array
+        const foundIdx = images.findIndex(img => img.filename === newFilename);
+        if (foundIdx >= 0) currentIndex = foundIdx;
+        // Update lightbox again from fresh data
+        if (foundIdx >= 0 && images[foundIdx]) {
+          const info = images[foundIdx];
+          lbFilename.textContent = info.filename;
+          lbMeta.textContent = `${info.width ? info.width+'×'+info.height+' · ' : ''}${info.formatted_size} · ${info.created_formatted}`;
+          lightboxImg.src = info.url;
+        }
+        loadGroups();
+      } catch (err) {
+        snackbar('Rename failed: ' + err.message, 'error');
+      } finally {
+        renameOk.disabled = false;
+        renameOk.textContent = 'Rename';
+      }
+    });
+
+    renameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') renameOk.click();
+      if (e.key === 'Escape') renameDialog.classList.remove('active');
+    });
+
+    // ── Move to Group ──────────────────────────────
+
+    lbMove.addEventListener('click', () => {
+      if (currentIndex < 0) return;
+      const img = images[currentIndex];
+      moveFilenameLabel.textContent = img.filename;
+      buildMoveGroupList();
+      moveDialog._batchMode = false;
+      moveDialog.classList.add('active');
+    });
+
+    function buildMoveGroupList() {
+      // Fetch fresh group list
+      fetch('/api/groups')
+        .then(r => r.json())
+        .then(groups => {
+          moveGroupList.innerHTML = '';
+          let selected = null;
+          groups.forEach(g => {
+            if (g.name === currentGroup) return; // skip current group
+            const item = document.createElement('div');
+            item.className = 'group-radio-item';
+            item.dataset.group = g.name;
+            item.innerHTML = `
+              <div class="radio-dot"></div>
+              <span class="material-symbols-outlined radio-icon">folder</span>
+              <span class="radio-name">${g.name}</span>
+              <span class="radio-count">${g.count} images</span>
+            `;
+            item.addEventListener('click', () => {
+              if (selected) selected.classList.remove('selected');
+              item.classList.add('selected');
+              selected = item;
+            });
+            moveGroupList.appendChild(item);
+          });
+          // Auto-select first
+          const first = moveGroupList.querySelector('.group-radio-item');
+          if (first) first.classList.add('selected');
+        })
+        .catch(err => snackbar('Failed to load groups: ' + err.message, 'error'));
+    }
+
+    moveCancel.addEventListener('click', () => {
+      moveDialog.classList.remove('active');
+    });
+
+    moveDialog.addEventListener('click', (e) => {
+      if (e.target === moveDialog) moveDialog.classList.remove('active');
+    });
+
+    moveOk.addEventListener('click', async () => {
+      const selected = moveGroupList.querySelector('.group-radio-item.selected');
+      if (!selected) {
+        snackbar('Please select a target group', 'error');
+        return;
+      }
+      const toGroup = selected.dataset.group;
+
+      moveOk.disabled = true;
+      moveOk.textContent = 'Moving…';
+
+      try {
+        if (moveDialog._batchMode) {
+          // Batch move
+          const names = [...selectedSet].map(i => images[i].filename);
+          const res = await fetch('/api/images/batch-move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group: currentGroup, to_group: toGroup, files: names }),
+          });
+          const data = await res.json();
+          if (data.moved && data.moved.length > 0) {
+            snackbar(`Moved ${data.moved.length} image(s) to "${toGroup}"`, 'success');
+          }
+          if (data.errors && data.errors.length > 0) {
+            data.errors.forEach(e => snackbar(`${e.filename}: ${e.error}`, 'error'));
+          }
+          moveDialog._batchMode = false;
+          moveDialog.classList.remove('active');
+          exitSelectMode();
+          await loadImages();
+          loadGroups();
+        } else {
+          // Single move
+          if (currentIndex < 0) return;
+          const img = images[currentIndex];
+          const res = await fetch(
+            `/api/image/${encodeURIComponent(img.filename)}/move?group=${encodeURIComponent(currentGroup)}`,
+            {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ to_group: toGroup }),
+            }
+          );
+          const data = await res.json();
+          if (data.error) {
+            snackbar('Move failed: ' + data.error, 'error');
+            return;
+          }
+          snackbar(`Moved to "${toGroup}"`, 'success');
+          moveDialog.classList.remove('active');
+          closeLightbox();
+          await loadImages();
+          loadGroups();
+        }
+      } catch (err) {
+        snackbar('Move failed: ' + err.message, 'error');
+      } finally {
+        moveOk.disabled = false;
+        moveOk.textContent = 'Move';
+      }
+    });
+
+    // ── Selection Mode ─────────────────────────────
+
+    function enterSelectMode() {
+      isSelectMode = true;
+      selectedSet.clear();
+      grid.classList.add('selection-mode');
+      selectToggle.style.display = 'none';
+      toolbarSelect.classList.add('active');
+      updateSelectCount();
+    }
+
+    function exitSelectMode() {
+      isSelectMode = false;
+      selectedSet.clear();
+      grid.classList.remove('selection-mode');
+      selectToggle.style.display = '';
+      toolbarSelect.classList.remove('active');
+      // Uncheck all cards
+      grid.querySelectorAll('.md-card__check').forEach(el => el.classList.remove('checked'));
+      grid.querySelectorAll('.md-card').forEach(el => el.classList.remove('selected'));
+    }
+
+    function toggleSelect(index) {
+      if (selectedSet.has(index)) {
+        selectedSet.delete(index);
+      } else {
+        selectedSet.add(index);
+      }
+      updateSelectUI();
+    }
+
+    function updateSelectUI() {
+      // Update checkboxes
+      grid.querySelectorAll('.md-card__check').forEach(el => {
+        const idx = parseInt(el.dataset.check, 10);
+        el.classList.toggle('checked', selectedSet.has(idx));
+      });
+      // Update card selected state
+      grid.querySelectorAll('.md-card').forEach(el => {
+        const idx = parseInt(el.dataset.index, 10);
+        el.classList.toggle('selected', selectedSet.has(idx));
+      });
+      updateSelectCount();
+    }
+
+    function updateSelectCount() {
+      const count = selectedSet.size;
+      selectCount.textContent = `${count} selected`;
+      batchMoveBtn.style.display = count > 0 ? '' : 'none';
+      batchDeleteBtn.style.display = count > 0 ? '' : 'none';
+    }
+
+    selectToggle.addEventListener('click', enterSelectMode);
+    selectCancel.addEventListener('click', exitSelectMode);
+
+    selectAllBtn.addEventListener('click', () => {
+      if (selectedSet.size === images.length) {
+        // Deselect all
+        selectedSet.clear();
+      } else {
+        // Select all visible (filtered) images
+        images.forEach((_, idx) => selectedSet.add(idx));
+      }
+      updateSelectUI();
+    });
+
+    // Batch delete — use pendingDelete = 'batch' as sentinel
+    batchDeleteBtn.addEventListener('click', () => {
+      if (selectedSet.size === 0) return;
+      const names = [...selectedSet].map(i => images[i].filename);
+      confirmText.textContent = `Delete ${names.length} selected image(s)? This cannot be undone.`;
+      pendingDelete = 'batch';
+      confirmDialog.classList.add('active');
+    });
+
+    // Batch move — reuse move dialog, patch moveOk temporarily
+    batchMoveBtn.addEventListener('click', () => {
+      if (selectedSet.size === 0) return;
+      moveFilenameLabel.textContent = `${selectedSet.size} selected image(s)`;
+      buildMoveGroupList();
+      moveDialog._batchMode = true;
+      moveDialog.classList.add('active');
+    });
+
+    // ── Copy Link ─────────────────────────────────
+
+    function fallbackCopy(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      ta.style.pointerEvents = 'none';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        snackbar('Link copied', 'success');
+      } catch {
+        snackbar('Copy failed, please copy manually', 'error');
+      }
+      document.body.removeChild(ta);
+    }
+
+    function copyText(text, label) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          snackbar(`Copied${label}`, 'success');
+        }).catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
+    }
+
+    // Lightbox copy buttons
+    document.querySelectorAll('[data-format]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (currentIndex < 0) return;
+        const img = images[currentIndex];
+        const fmt = btn.dataset.format;
+        let text, label;
+        if (fmt === 'markdown') {
+          text = `![](${img.url})`;
+          label = ' Markdown link';
+        } else if (fmt === 'html') {
+          text = `<img src="${img.url}" alt="${img.filename}">`;
+          label = ' HTML link';
+        } else {
+          text = img.url;
+          label = ' URL';
+        }
+        copyText(text, label);
+      });
+    });
+
+    // ── Delete Image ──────────────────────────────
+
+    function promptDelete(index) {
+      const img = images[index];
+      if (!img) return;
+      pendingDelete = index;
+      confirmText.textContent = `Delete "${img.filename}"? This cannot be undone.`;
+      confirmDialog.classList.add('active');
+    }
+
+    confirmCancel.addEventListener('click', () => {
+      confirmDialog.classList.remove('active');
+      pendingDelete = null;
+      pendingDeleteGroup = null;
+    });
+
+    confirmOk.addEventListener('click', async () => {
+      if (pendingDelete === 'batch') {
+        // Batch delete
+        const names = [...selectedSet].map(i => images[i].filename);
+        confirmDialog.classList.remove('active');
+        pendingDelete = null;
+        try {
+          const res = await fetch('/api/images/batch-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group: currentGroup, files: names }),
+          });
+          const data = await res.json();
+          if (data.deleted && data.deleted.length > 0) {
+            snackbar(`Deleted ${data.deleted.length} image(s)`, 'success');
+          }
+          if (data.errors && data.errors.length > 0) {
+            data.errors.forEach(e => snackbar(`${e.filename}: ${e.error}`, 'error'));
+          }
+          exitSelectMode();
+          await loadImages();
+          loadGroups();
+        } catch (err) {
+          snackbar('Batch delete failed: ' + err.message, 'error');
+        }
+      } else if (pendingDelete !== null) {
+        const idx = pendingDelete;
+        const img = images[idx];
+        confirmDialog.classList.remove('active');
+        pendingDelete = null;
+
+        if (!img) return;
+
+        try {
+          const res = await fetch(
+            `/api/image/${encodeURIComponent(img.filename)}?group=${encodeURIComponent(currentGroup)}`,
+            { method: 'DELETE' }
+          );
+          const data = await res.json();
+          if (data.success) {
+            snackbar('Deleted', 'success');
+            if (currentIndex === idx) closeLightbox();
+            await loadImages();
+            loadGroups();
+          } else {
+            snackbar('Delete failed: ' + (data.error || 'Unknown error'), 'error');
+          }
+        } catch (err) {
+          snackbar('Delete failed: ' + err.message, 'error');
+        }
+      } else if (pendingDeleteGroup !== null) {
+        const name = pendingDeleteGroup;
+        confirmDialog.classList.remove('active');
+        pendingDeleteGroup = null;
+        await deleteGroup(name);
+      }
+    });
+
+    confirmDialog.addEventListener('click', (e) => {
+      if (e.target === confirmDialog) {
+        confirmDialog.classList.remove('active');
+        pendingDelete = null;
+        pendingDeleteGroup = null;
+      }
+    });
+
+    // ── Keyboard Shortcuts ────────────────────────
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && confirmDialog.classList.contains('active')) {
+        confirmDialog.classList.remove('active');
+        pendingDelete = null;
+        pendingDeleteGroup = null;
+      }
+      if (e.key === 'Escape' && createGroupDialog.classList.contains('active')) {
+        closeCreateGroupDialog();
+      }
+    });
+
+    // ── Settings Dialog ───────────────────────────
+
+    async function openSettingsDialog() {
+      // Always fetch the current path from the API
+      try {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        settingsDataDir.value = data.data_dir || '';
+      } catch {
+        // Fallback to page-rendered value
+        settingsDataDir.value = {{ data_dir | tojson }};
+      }
+      settingsDialog.classList.add('active');
+      setTimeout(() => settingsDataDir.focus(), 150);
+    }
+
+    function closeSettingsDialog() {
+      settingsDialog.classList.remove('active');
+      settingsError.style.display = 'none';
+    }
+
+    function showSettingsError(msg) {
+      settingsError.textContent = msg;
+      settingsError.style.display = 'block';
+    }
+
+    settingsBtn.addEventListener('click', openSettingsDialog);
+    settingsCancel.addEventListener('click', closeSettingsDialog);
+
+    // Keep Escape to close
+    // (clicking outside intentionally disabled — user must click Cancel)
+
+    browseBtn.addEventListener('click', async () => {
+      browseBtn.disabled = true;
+      browseBtn.textContent = 'Opening…';
+      try {
+        const res = await fetch('/api/settings/browse', { method: 'POST' });
+        const data = await res.json();
+        if (data.path) {
+          settingsDataDir.value = data.path;
+        } else if (data.error) {
+          snackbar(data.error, 'info');
+        }
+      } catch (err) {
+        snackbar('Folder picker failed: ' + err.message, 'error');
+      } finally {
+        browseBtn.disabled = false;
+        browseBtn.innerHTML = '<span class="material-symbols-outlined md-btn__icon">folder_open</span> Browse';
+      }
+    });
+
+    settingsSave.addEventListener('click', async () => {
+      const dir = settingsDataDir.value.trim();
+      if (!dir) {
+        showSettingsError('Please enter a directory path');
+        return;
+      }
+
+      settingsError.style.display = 'none';
+      settingsSave.disabled = true;
+      settingsSave.textContent = 'Saving…';
+
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data_dir: dir }),
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          showSettingsError(data.error);
+          settingsSave.disabled = false;
+          settingsSave.textContent = 'Save';
+          return;
+        }
+
+        closeSettingsDialog();
+        snackbar(data.message || 'Directory updated', 'success');
+        await loadImages();
+        loadGroups();
+      } catch (err) {
+        showSettingsError('Failed to save: ' + err.message);
+      } finally {
+        settingsSave.disabled = false;
+        settingsSave.textContent = 'Save';
+      }
+    });
+
+    // Keyboard shortcuts for rename / move dialogs
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && settingsDialog.classList.contains('active')) {
+        closeSettingsDialog();
+      }
+      if (e.key === 'Escape' && renameDialog.classList.contains('active')) {
+        renameDialog.classList.remove('active');
+      }
+      if (e.key === 'Escape' && moveDialog.classList.contains('active')) {
+        moveDialog.classList.remove('active');
+      }
+    });
+
+    // ── Init ──────────────────────────────────────
+
+    loadGroups();
+    loadImages();
+
+  })();
+  </script>
+</body>
+</html>

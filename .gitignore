@@ -1,0 +1,19 @@
+# PyInstaller
+dist/
+build/
+*.spec
+
+# venv
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Runtime
+settings.json
+*.log

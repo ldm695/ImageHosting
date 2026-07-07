@@ -1,0 +1,959 @@
+"""
+ImageHosting — Local image hosting service
+===========================================
+Single-user LAN image hosting with Groups / Upload / Browse / Delete / Copy links / Thumbnails
+"""
+import os
+import sys
+import re
+import json
+import shutil
+import argparse
+import mimetypes
+from datetime import datetime
+from pathlib import Path
+
+from flask import (
+    Flask, render_template, request, jsonify,
+    send_from_directory, url_for
+)
+from werkzeug.utils import secure_filename
+
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+from config import Config
+
+# ── Settings persistence ─────────────────────────
+
+SETTINGS_FILE = Config.DATA_DIR / 'settings.json'
+
+
+def load_settings() -> dict:
+    """Load settings from settings.json"""
+    if SETTINGS_FILE.exists():
+        try:
+            return json.loads(SETTINGS_FILE.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def save_settings(data: dict):
+    """Save settings to settings.json (merges with existing)"""
+    current = load_settings()
+    current.update(data)
+    SETTINGS_FILE.write_text(
+        json.dumps(current, indent=2, ensure_ascii=False),
+        encoding='utf-8'
+    )
+
+
+# ── App Init ─────────────────────────────────────
+
+app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
+# Apply persisted settings
+_persisted = load_settings()
+if 'data_dir' in _persisted and not any(a.startswith('--data-dir') for a in sys.argv[1:]):
+    Config.DATA_DIR = Path(_persisted['data_dir'])
+    Config.UPLOAD_DIR = Config.DATA_DIR / 'uploads'
+    Config.THUMBNAIL_DIR = Config.DATA_DIR / 'thumbnails'
+
+# Ensure root dirs exist
+Config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+Config.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
+# Ensure default group dirs exist
+(Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+(Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+
+# Register MIME types
+mimetypes.add_type('image/webp', '.webp')
+mimetypes.add_type('image/avif', '.avif')
+
+# ── Utilities ────────────────────────────────────
+
+def allowed_file(filename: str) -> bool:
+    """Check if file extension is allowed"""
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in Config.ALLOWED_EXTENSIONS
+
+
+def get_local_ip() -> str:
+    """Get local LAN IP address"""
+    try:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(0.1)
+            s.connect(('10.255.255.255', 1))
+            ip = s.getsockname()[0]
+        return ip
+    except Exception:
+        return '127.0.0.1'
+
+
+def format_size(size_bytes: int) -> str:
+    """Format file size for human reading"""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f} TB"
+
+
+def is_valid_group_name(name: str) -> bool:
+    """Validate group name"""
+    if not name or len(name) > 64:
+        return False
+    return bool(re.match(r'^[a-zA-Z0-9_\-]+$', name))
+
+
+def make_safe_filename(filename: str, group: str = Config.DEFAULT_GROUP) -> str:
+    """
+    Generate a safe filename (with group-level duplicate detection)
+    """
+    name, ext = os.path.splitext(filename)
+    ext = ext.lower()
+
+    safe = secure_filename(filename)
+    if not safe or Path(safe).stem == '':
+        safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', name)
+        safe = re.sub(r'\s+', '_', safe).strip('._')
+        if not safe:
+            safe = 'image'
+        safe += ext
+
+    # Check duplicates within group
+    stem, ext = os.path.splitext(safe)
+    counter = 0
+    while (Config.UPLOAD_DIR / group / safe).exists():
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        safe = f"{stem}_{ts}{ext}"
+        counter += 1
+        if counter > 100:
+            break
+
+    return safe
+
+
+def generate_thumbnail(src_path: Path, dst_path: Path) -> bool:
+    """Generate thumbnail, return True on success"""
+    if not HAS_PIL:
+        return False
+    ext = src_path.suffix.lower()
+    if ext not in Config.PILLOW_FORMATS:
+        return False
+    try:
+        with Image.open(src_path) as img:
+            if img.mode in ('RGBA', 'P'):
+                img = img.convert('RGBA')
+
+            img.thumbnail(Config.THUMBNAIL_SIZE, Image.LANCZOS)
+
+            out_ext = dst_path.suffix.lower()
+            fmt = {
+                '.png': 'PNG', '.jpg': 'JPEG', '.jpeg': 'JPEG',
+                '.gif': 'GIF', '.webp': 'WEBP', '.bmp': 'BMP',
+            }.get(out_ext, 'JPEG')
+
+            if fmt == 'JPEG' and img.mode == 'RGBA':
+                img = img.convert('RGB')
+
+            img.save(dst_path, fmt, quality=Config.THUMBNAIL_QUALITY)
+            return True
+    except Exception:
+        return False
+
+
+def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP) -> dict | None:
+    """Get single image metadata"""
+    filepath = Config.UPLOAD_DIR / group / filename
+    if not filepath.exists() or not filepath.is_file():
+        return None
+
+    stat = filepath.stat()
+    ext = filepath.suffix.lower()
+
+    width = height = None
+    if ext in Config.PILLOW_FORMATS and HAS_PIL:
+        try:
+            with Image.open(filepath) as img:
+                width, height = img.size
+        except Exception:
+            pass
+
+    return {
+        'filename': filename,
+        'group': group,
+        'url': url_for('serve_upload', group=group, filename=filename),
+        'thumbnail_url': url_for('serve_thumbnail', group=group, filename=filename),
+        'size': stat.st_size,
+        'formatted_size': format_size(stat.st_size),
+        'created': datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        'created_formatted': datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d %H:%M'),
+        'width': width,
+        'height': height,
+        'ext': ext,
+    }
+
+
+def scan_images(group: str = Config.DEFAULT_GROUP) -> list[dict]:
+    """Scan group directory, return images sorted by newest first"""
+    group_dir = Config.UPLOAD_DIR / group
+    if not group_dir.exists():
+        return []
+
+    images = []
+    for f in sorted(group_dir.iterdir(),
+                     key=lambda p: p.stat().st_ctime, reverse=True):
+        if f.is_file() and allowed_file(f.name):
+            info = get_image_info(f.name, group)
+            if info:
+                images.append(info)
+    return images
+
+
+def scan_groups() -> list[dict]:
+    """Scan all groups (subdirectories), sorted default first then alpha"""
+    groups = []
+    for d in sorted(Config.UPLOAD_DIR.iterdir()):
+        if d.is_dir():
+            count = 0
+            try:
+                count = len([f for f in d.iterdir()
+                            if f.is_file() and allowed_file(f.name)])
+            except Exception:
+                pass
+            groups.append({
+                'name': d.name,
+                'count': count,
+            })
+    # Default group first
+    groups.sort(key=lambda g: (0 if g['name'] == Config.DEFAULT_GROUP else 1, g['name']))
+    return groups
+
+
+def ensure_group_dirs(group: str):
+    """Ensure group directories exist"""
+    (Config.UPLOAD_DIR / group).mkdir(parents=True, exist_ok=True)
+    (Config.THUMBNAIL_DIR / group).mkdir(parents=True, exist_ok=True)
+
+
+# ── Page Routes ─────────────────────────────────
+
+@app.route('/')
+def index():
+    """Main page"""
+    return render_template('index.html',
+        title=Config.SITE_TITLE,
+        port=Config.PORT,
+        local_ip=get_local_ip(),
+        max_size_mb=Config.MAX_CONTENT_LENGTH // (1024 * 1024),
+        default_group=Config.DEFAULT_GROUP,
+        data_dir=str(Config.DATA_DIR),
+    )
+
+
+# ── Settings API ─────────────────────────────────
+
+@app.route('/api/settings', methods=['GET'])
+def api_get_settings():
+    """Get current settings"""
+    return jsonify({
+        'data_dir': str(Config.DATA_DIR),
+        'port': Config.PORT,
+    })
+
+
+@app.route('/api/settings/browse', methods=['POST'])
+def api_browse_folder():
+    """Open native folder-picker dialog via tkinter, return selected path."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        folder = filedialog.askdirectory(title='Select Image Storage Directory')
+        root.destroy()
+        if folder:
+            return jsonify({'path': folder})
+        return jsonify({'path': None, 'error': 'No folder selected'}), 400
+    except ImportError:
+        return jsonify({'error': 'tkinter not available on this system'}), 501
+    except Exception as e:
+        return jsonify({'error': f'Failed to open folder picker: {str(e)}'}), 500
+
+
+@app.route('/api/settings', methods=['PUT'])
+def api_update_settings():
+    """Update settings. Migrates existing images and switches at runtime."""
+    data = request.get_json(silent=True) or {}
+    new_data_dir = (data.get('data_dir', '') or '').strip()
+
+    if not new_data_dir:
+        return jsonify({'error': 'Directory path is required'}), 400
+
+    new_root = Path(new_data_dir).resolve()
+    old_root = Config.DATA_DIR.resolve()
+
+    if new_root == old_root:
+        return jsonify({'error': 'New directory is the same as the current one'}), 400
+
+    if not new_root.parent.exists():
+        return jsonify({'error': f'Parent directory "{new_root.parent}" does not exist'}), 400
+
+    # New paths
+    new_upload = new_root / 'uploads'
+    new_thumb = new_root / 'thumbnails'
+
+    try:
+        new_upload.mkdir(parents=True, exist_ok=True)
+        new_thumb.mkdir(parents=True, exist_ok=True)
+        # Test write permission
+        test_file = new_upload / '.write_test'
+        test_file.write_text('test')
+        test_file.unlink()
+    except Exception as e:
+        return jsonify({'error': f'Cannot write to directory: {str(e)}'}), 400
+
+    migration_log = {'moved_uploads': 0, 'moved_thumbnails': 0, 'groups': []}
+
+    try:
+        # Migrate each group from old → new
+        if Config.UPLOAD_DIR.exists():
+            for group_dir in Config.UPLOAD_DIR.iterdir():
+                if not group_dir.is_dir():
+                    continue
+                gname = group_dir.name
+                files = [f for f in group_dir.iterdir()
+                        if f.is_file() and allowed_file(f.name)]
+                if files:
+                    dst_dir = new_upload / gname
+                    dst_dir.mkdir(parents=True, exist_ok=True)
+                    for f in files:
+                        shutil.move(str(f), str(dst_dir / f.name))
+                        migration_log['moved_uploads'] += 1
+
+                # Thumbnails
+                old_td = Config.THUMBNAIL_DIR / gname
+                if old_td.exists():
+                    tfiles = [f for f in old_td.iterdir() if f.is_file()]
+                    if tfiles:
+                        new_td = new_thumb / gname
+                        new_td.mkdir(parents=True, exist_ok=True)
+                        for f in tfiles:
+                            shutil.move(str(f), str(new_td / f.name))
+                            migration_log['moved_thumbnails'] += 1
+
+                migration_log['groups'].append(gname)
+
+        # Clean up old uploads/thumbnails dirs only (NOT parent — avoid accidental deletion)
+        for p in [Config.THUMBNAIL_DIR, Config.UPLOAD_DIR]:
+            if p.exists():
+                try:
+                    # Remove empty group subdirs first
+                    for child in sorted(p.iterdir(), reverse=True):
+                        if child.is_dir():
+                            try:
+                                child.rmdir()
+                            except OSError:
+                                pass
+                    p.rmdir()
+                except OSError:
+                    pass
+
+    except Exception as e:
+        migration_log['error'] = str(e)
+
+    # ── Switch at runtime ─────────────────────────────────
+    Config.DATA_DIR = new_root
+    Config.UPLOAD_DIR = new_upload
+    Config.THUMBNAIL_DIR = new_thumb
+
+    # Ensure default group exists in new location
+    (Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+    (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+
+    # Persist to settings.json
+    save_settings({'data_dir': str(new_root)})
+
+    msg = 'Storage directory updated instantly.'
+    if migration_log['moved_uploads'] > 0:
+        msg += f' Migrated {migration_log["moved_uploads"]} image(s).'
+    if migration_log.get('error'):
+        msg += f' Warning: partial migration — {migration_log["error"]}'
+
+    return jsonify({
+        'success': True,
+        'migration': migration_log,
+        'message': msg,
+    })
+
+
+# ── Group API ────────────────────────────────────
+
+@app.route('/api/groups', methods=['GET'])
+def api_list_groups():
+    """List all groups"""
+    return jsonify(scan_groups())
+
+
+@app.route('/api/groups', methods=['POST'])
+def api_create_group():
+    """Create a new group"""
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name', '') or '').strip()
+
+    if not name:
+        return jsonify({'error': 'Group name is required'}), 400
+    if not is_valid_group_name(name):
+        return jsonify({'error': 'Group name can only contain letters, numbers, underscores, and hyphens'}), 400
+
+    group_dir = Config.UPLOAD_DIR / name
+    if group_dir.exists():
+        return jsonify({'error': f'Group "{name}" already exists'}), 409
+
+    ensure_group_dirs(name)
+    return jsonify({'success': True, 'name': name}), 201
+
+
+@app.route('/api/groups/<name>', methods=['DELETE'])
+def api_delete_group(name):
+    """Delete a group and all its images"""
+    if name == Config.DEFAULT_GROUP:
+        return jsonify({'error': 'Cannot delete the default group'}), 400
+    if not is_valid_group_name(name):
+        return jsonify({'error': 'Invalid group name'}), 400
+
+    group_dir = Config.UPLOAD_DIR / name
+    thumb_dir = Config.THUMBNAIL_DIR / name
+
+    if not group_dir.exists():
+        return jsonify({'error': 'Group not found'}), 404
+
+    try:
+        shutil.rmtree(str(group_dir))
+        if thumb_dir.exists():
+            shutil.rmtree(str(thumb_dir))
+    except Exception as e:
+        return jsonify({'error': f'Delete failed: {str(e)}'}), 500
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/groups/<name>', methods=['PUT'])
+def api_rename_group(name):
+    """Rename a group"""
+    if name == Config.DEFAULT_GROUP:
+        return jsonify({'error': 'Cannot rename the default group'}), 400
+
+    data = request.get_json(silent=True) or {}
+    new_name = (data.get('new_name', '') or '').strip()
+
+    if not new_name:
+        return jsonify({'error': 'New name is required'}), 400
+    if not is_valid_group_name(new_name):
+        return jsonify({'error': 'Name can only contain letters, numbers, underscores, and hyphens'}), 400
+
+    old_dir = Config.UPLOAD_DIR / name
+    new_dir = Config.UPLOAD_DIR / new_name
+    if not old_dir.exists():
+        return jsonify({'error': 'Group not found'}), 404
+    if new_dir.exists():
+        return jsonify({'error': f'Group "{new_name}" already exists'}), 409
+
+    old_thumb = Config.THUMBNAIL_DIR / name
+    new_thumb = Config.THUMBNAIL_DIR / new_name
+
+    try:
+        old_dir.rename(new_dir)
+        if old_thumb.exists():
+            old_thumb.rename(new_thumb)
+    except Exception as e:
+        return jsonify({'error': f'Rename failed: {str(e)}'}), 500
+
+    return jsonify({'success': True, 'name': new_name}), 200
+
+
+# ── Image API ────────────────────────────────────
+
+@app.route('/api/images')
+def api_images():
+    """Get images for a specific group"""
+    group = request.args.get('group', Config.DEFAULT_GROUP)
+    return jsonify(scan_images(group))
+
+
+@app.route('/api/upload', methods=['POST'])
+def api_upload():
+    """Upload images (single or multiple, to a specific group)"""
+    group = request.args.get('group', Config.DEFAULT_GROUP)
+    ensure_group_dirs(group)
+
+    if 'files' not in request.files:
+        return jsonify({'error': 'No file data in request'}), 400
+
+    files = request.files.getlist('files')
+    files = [f for f in files if f and f.filename and f.filename.strip()]
+
+    if not files:
+        return jsonify({'error': 'Please select files to upload'}), 400
+
+    # Optional custom filenames (JSON array, one per file, by index)
+    custom_names = []
+    raw = request.form.get('filenames', '')
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                custom_names = parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    uploaded = []
+    errors = []
+
+    for i, file in enumerate(files):
+        if not allowed_file(file.filename):
+            errors.append({
+                'filename': file.filename,
+                'error': f'Unsupported format. Allowed: {", ".join(sorted(Config.ALLOWED_EXTENSIONS))}'
+            })
+            continue
+
+        # Determine effective filename (custom name if provided)
+        # Make sure extension is preserved from the original file
+        _, orig_ext = os.path.splitext(file.filename)
+        use_name = file.filename
+        if i < len(custom_names) and custom_names[i]:
+            cn = custom_names[i].strip()
+            if cn:
+                # Ensure it has the same extension
+                cn_base, cn_ext = os.path.splitext(cn)
+                if not cn_ext:
+                    cn += orig_ext.lower()
+                use_name = cn
+
+        # Get safe filename but REJECT if already exists (no auto-rename)
+        safe = secure_filename(use_name)
+        if not safe or Path(safe).stem == '':
+            name, ext = os.path.splitext(use_name)
+            ext = ext.lower()
+            safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', name)
+            safe = re.sub(r'\s+', '_', safe).strip('._')
+            if not safe:
+                safe = 'image'
+            safe += ext
+
+        filepath = Config.UPLOAD_DIR / group / safe
+        if filepath.exists():
+            errors.append({
+                'filename': file.filename,
+                'error': f'File "{safe}" already exists in this group'
+            })
+            continue
+
+        try:
+            file.save(str(filepath))
+        except Exception as e:
+            errors.append({'filename': file.filename, 'error': f'Save failed: {str(e)}'})
+            continue
+
+        # Generate thumbnail
+        ext = filepath.suffix.lower()
+        if ext in Config.PILLOW_FORMATS:
+            thumbpath = Config.THUMBNAIL_DIR / group / safe
+            generate_thumbnail(filepath, thumbpath)
+
+        info = get_image_info(safe, group)
+        if info:
+            uploaded.append(info)
+
+    return jsonify({'uploaded': uploaded, 'errors': errors})
+
+
+@app.route('/api/image/<filename>', methods=['DELETE'])
+def api_delete_image(filename):
+    """Delete an image (original + thumbnail)"""
+    group = request.args.get('group', Config.DEFAULT_GROUP)
+    safe = secure_filename(filename)
+    if not safe:
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    filepath = Config.UPLOAD_DIR / group / safe
+    if not filepath.exists():
+        return jsonify({'error': 'File not found'}), 404
+
+    try:
+        filepath.unlink()
+    except Exception as e:
+        return jsonify({'error': f'Delete failed: {str(e)}'}), 500
+
+    thumbpath = Config.THUMBNAIL_DIR / group / safe
+    if thumbpath.exists():
+        try:
+            thumbpath.unlink()
+        except Exception:
+            pass
+
+    return jsonify({'success': True, 'filename': safe})
+
+
+@app.route('/api/image/<filename>/rename', methods=['PUT'])
+def api_rename_image(filename):
+    """Rename an image within its group"""
+    group = request.args.get('group', Config.DEFAULT_GROUP)
+    data = request.get_json(silent=True) or {}
+    new_name = (data.get('new_name', '') or '').strip()
+
+    if not new_name:
+        return jsonify({'error': 'New filename is required'}), 400
+
+    safe_old = secure_filename(filename)
+    safe_new = secure_filename(new_name)
+
+    if not safe_old:
+        return jsonify({'error': 'Invalid original filename'}), 400
+    if not safe_new:
+        return jsonify({'error': 'Invalid new filename'}), 400
+
+    # Extension must match
+    old_ext = Path(safe_old).suffix.lower()
+    new_ext = Path(safe_new).suffix.lower()
+    if old_ext != new_ext:
+        return jsonify({'error': f'Extension must remain the same ({old_ext})'}), 400
+
+    old_path = Config.UPLOAD_DIR / group / safe_old
+    new_path = Config.UPLOAD_DIR / group / safe_new
+
+    if not old_path.exists():
+        return jsonify({'error': 'File not found'}), 404
+    if new_path.exists():
+        return jsonify({'error': 'A file with that name already exists'}), 409
+
+    try:
+        old_path.rename(new_path)
+    except Exception as e:
+        return jsonify({'error': f'Rename failed: {str(e)}'}), 500
+
+    # Rename thumbnail if it exists
+    old_thumb = Config.THUMBNAIL_DIR / group / safe_old
+    new_thumb = Config.THUMBNAIL_DIR / group / safe_new
+    if old_thumb.exists():
+        try:
+            old_thumb.rename(new_thumb)
+        except Exception:
+            pass
+
+    info = get_image_info(safe_new, group)
+    return jsonify({'success': True, 'filename': safe_new, 'info': info})
+
+
+@app.route('/api/image/<filename>/move', methods=['PUT'])
+def api_move_image(filename):
+    """Move an image to another group"""
+    from_group = request.args.get('group', Config.DEFAULT_GROUP)
+    data = request.get_json(silent=True) or {}
+    to_group = (data.get('to_group', '') or '').strip()
+
+    if not to_group:
+        return jsonify({'error': 'Target group is required'}), 400
+    if not is_valid_group_name(to_group):
+        return jsonify({'error': 'Invalid target group name'}), 400
+    if to_group == from_group:
+        return jsonify({'error': 'Target group is the same as the current group'}), 400
+
+    safe_file = secure_filename(filename)
+    if not safe_file or not allowed_file(safe_file):
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    src_path = Config.UPLOAD_DIR / from_group / safe_file
+    dst_path = Config.UPLOAD_DIR / to_group / safe_file
+
+    if not src_path.exists():
+        return jsonify({'error': 'File not found'}), 404
+    if dst_path.exists():
+        return jsonify({'error': f'A file named "{safe_file}" already exists in "{to_group}"'}), 409
+
+    # Ensure target group dirs exist
+    ensure_group_dirs(to_group)
+
+    try:
+        shutil.move(str(src_path), str(dst_path))
+    except Exception as e:
+        return jsonify({'error': f'Move failed: {str(e)}'}), 500
+
+    # Move thumbnail
+    src_thumb = Config.THUMBNAIL_DIR / from_group / safe_file
+    dst_thumb = Config.THUMBNAIL_DIR / to_group / safe_file
+    if src_thumb.exists():
+        try:
+            src_thumb.rename(dst_thumb)
+        except Exception:
+            pass
+
+    info = get_image_info(safe_file, to_group)
+    return jsonify({'success': True, 'filename': safe_file, 'group': to_group, 'info': info})
+
+
+# ── Batch Operations ────────────────────────────
+
+@app.route('/api/images/batch-delete', methods=['POST'])
+def api_batch_delete():
+    """Delete multiple images at once"""
+    data = request.get_json(silent=True) or {}
+    group = data.get('group', Config.DEFAULT_GROUP)
+    files = data.get('files', [])
+
+    if not files or not isinstance(files, list):
+        return jsonify({'error': 'File list is required'}), 400
+
+    results = {'deleted': [], 'errors': []}
+
+    for filename in files:
+        safe = secure_filename(filename)
+        if not safe:
+            results['errors'].append({'filename': filename, 'error': 'Invalid filename'})
+            continue
+
+        filepath = Config.UPLOAD_DIR / group / safe
+        if not filepath.exists():
+            results['errors'].append({'filename': filename, 'error': 'Not found'})
+            continue
+
+        try:
+            filepath.unlink()
+            thumbpath = Config.THUMBNAIL_DIR / group / safe
+            if thumbpath.exists():
+                thumbpath.unlink()
+            results['deleted'].append(filename)
+        except Exception as e:
+            results['errors'].append({'filename': filename, 'error': str(e)})
+
+    return jsonify({'success': True, **results})
+
+
+@app.route('/api/images/batch-move', methods=['POST'])
+def api_batch_move():
+    """Move multiple images to another group"""
+    data = request.get_json(silent=True) or {}
+    group = data.get('group', Config.DEFAULT_GROUP)
+    to_group = data.get('to_group', '').strip()
+    files = data.get('files', [])
+
+    if not files or not isinstance(files, list):
+        return jsonify({'error': 'File list is required'}), 400
+    if not to_group:
+        return jsonify({'error': 'Target group is required'}), 400
+    if to_group == group:
+        return jsonify({'error': 'Target group is the same as the current group'}), 400
+
+    ensure_group_dirs(to_group)
+    results = {'moved': [], 'errors': []}
+
+    for filename in files:
+        safe = secure_filename(filename)
+        if not safe or not allowed_file(safe):
+            results['errors'].append({'filename': filename, 'error': 'Invalid filename'})
+            continue
+
+        src = Config.UPLOAD_DIR / group / safe
+        dst = Config.UPLOAD_DIR / to_group / safe
+
+        if not src.exists():
+            results['errors'].append({'filename': filename, 'error': 'Not found'})
+            continue
+        if dst.exists():
+            results['errors'].append({'filename': filename, 'error': 'Already exists in target'})
+            continue
+
+        try:
+            shutil.move(str(src), str(dst))
+            # Move thumbnail
+            src_thumb = Config.THUMBNAIL_DIR / group / safe
+            dst_thumb = Config.THUMBNAIL_DIR / to_group / safe
+            if src_thumb.exists():
+                src_thumb.rename(dst_thumb)
+            results['moved'].append(filename)
+        except Exception as e:
+            results['errors'].append({'filename': filename, 'error': str(e)})
+
+    return jsonify({'success': True, **results})
+
+
+# ── Static File Routes ──────────────────────────
+
+@app.route('/uploads/<group>/<filename>')
+def serve_upload(group, filename):
+    """Serve original image"""
+    safe_group = secure_filename(group) or Config.DEFAULT_GROUP
+    safe_file = secure_filename(filename)
+    return send_from_directory(str(Config.UPLOAD_DIR / safe_group), safe_file)
+
+
+@app.route('/thumbnails/<group>/<filename>')
+def serve_thumbnail(group, filename):
+    """Serve thumbnail (fallback to original if missing)"""
+    safe_group = secure_filename(group) or Config.DEFAULT_GROUP
+    safe_file = secure_filename(filename)
+    thumbpath = Config.THUMBNAIL_DIR / safe_group / safe_file
+    if thumbpath.exists():
+        return send_from_directory(str(Config.THUMBNAIL_DIR / safe_group), safe_file)
+    return send_from_directory(str(Config.UPLOAD_DIR / safe_group), safe_file)
+
+
+# ── System API ──────────────────────────────────
+
+@app.route('/api/shutdown', methods=['POST'])
+def api_shutdown():
+    """Gracefully shut down the Flask server (used by tray icon)"""
+    shutdown = request.environ.get('werkzeug.server.shutdown')
+    if shutdown:
+        shutdown()
+    return jsonify({'success': True})
+
+
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    """Simple health-check endpoint (used by tray icon)"""
+    return jsonify({'status': 'running', 'port': Config.PORT})
+
+
+# ── Error Handlers ───────────────────────────────
+
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    return jsonify({'error': f'File too large. Maximum: {Config.MAX_CONTENT_LENGTH // (1024 * 1024)} MB'}), 413
+
+
+@app.errorhandler(404)
+def page_not_found(e):
+    if request.path.startswith('/api/'):
+        return jsonify({'error': 'Endpoint not found'}), 404
+    return render_template('index.html', title=Config.SITE_TITLE), 404
+
+
+# ── Entry ────────────────────────────────────────
+
+def parse_args():
+    is_frozen = getattr(sys, 'frozen', False)
+    parser = argparse.ArgumentParser(
+        description='ImageHosting — Local image hosting service',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='Examples:\n'
+               '  python app.py                          # Console mode\n'
+               '  python app.py --tray                   # Tray icon mode\n'
+               '  python app.py --port 8080              # Custom port\n'
+               '  python app.py --data-dir D:\\MyImages   # Custom storage\n'
+    )
+    parser.add_argument('--port', type=int, default=None,
+                        help=f'Server port (default {Config.PORT})')
+    parser.add_argument('--data-dir', type=str, default=None,
+                        help='Image storage directory (default: save to settings.json)')
+    parser.add_argument('--tray', action='store_true', default=is_frozen,
+                        help='Run with system tray icon (default: auto for packaged exe)')
+    parser.add_argument('--no-tray', action='store_true', default=False,
+                        help='Force console mode even when packaged')
+    return parser.parse_args()
+
+
+def print_banner(port: int, local_ip: str):
+    print()
+    lines = [
+        f"  >> {Config.SITE_TITLE}",
+        f"  {'─' * 37}",
+        f"  Local:        http://localhost:{port}",
+        f"  LAN:          http://{local_ip}:{port}",
+        f"  {'─' * 37}",
+        f"  Storage:      {Config.UPLOAD_DIR}",
+        f"  Thumbnails:   {Config.THUMBNAIL_DIR}",
+        f"  Default group: {Config.DEFAULT_GROUP}",
+        f"  Max upload:   {Config.MAX_CONTENT_LENGTH // (1024 * 1024)} MB",
+        f"  {'─' * 37}",
+        f"  Press Ctrl+C to stop",
+        "",
+    ]
+    for line in lines:
+        try:
+            print(line)
+        except UnicodeEncodeError:
+            print(line.encode('ascii', errors='replace').decode('ascii'))
+
+
+def _apply_cli_args(args):
+    """Apply CLI argument overrides to Config."""
+    if args.port:
+        Config.PORT = args.port
+    if args.data_dir:
+        Config.DATA_DIR = Path(args.data_dir)
+        Config.UPLOAD_DIR = Config.DATA_DIR / 'uploads'
+        Config.THUMBNAIL_DIR = Config.DATA_DIR / 'thumbnails'
+        Config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        Config.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
+        (Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+        (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+
+
+def _serve_forever():
+    """Run Flask (blocking)."""
+    app.run(host=Config.HOST, port=Config.PORT, debug=False, use_reloader=False)
+
+
+def main_console():
+    """Launch in console mode (blocking — Ctrl+C to stop)."""
+    local_ip = get_local_ip()
+    print_banner(local_ip=local_ip, port=Config.PORT)
+    _serve_forever()
+
+
+def main_tray():
+    """Launch with system-tray icon. Auto-restarts when tray says Restart."""
+    local_ip = get_local_ip()
+    print_banner(local_ip=local_ip, port=Config.PORT)
+
+    import threading
+    server_stopped = threading.Event()
+
+    def run_with_restart():
+        while not server_stopped.is_set():
+            _serve_forever()
+            # When Flask stops (shutdown API called), check if we should restart
+            if not server_stopped.is_set():
+                # Small delay then re-enter _serve_forever for a clean restart
+                time.sleep(0.3)
+
+    import time
+    server_thread = threading.Thread(target=run_with_restart, daemon=True)
+    server_thread.start()
+
+    # Run tray in main thread (blocking)
+    try:
+        import tray
+        tray.run_tray(Config.PORT, server_stopped=server_stopped)
+    except ImportError as e:
+        print(f"Tray unavailable ({e}), falling back to console mode.")
+        server_stopped.set()
+        # Fall back: just wait for the server thread
+        server_thread.join()
+
+
+def main():
+    args = parse_args()
+    use_tray = args.tray and not args.no_tray
+
+    _apply_cli_args(args)
+
+    if use_tray:
+        main_tray()
+    else:
+        main_console()
+
+
+if __name__ == '__main__':
+    main()
