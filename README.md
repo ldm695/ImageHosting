@@ -147,6 +147,8 @@ rm -rf build ImageHosting.spec dist\ImageHosting dist\*.wxs dist\*.wixobj dist\*
 | `POST` | `/api/shutdown` | 优雅关闭（托盘使用） |
 | `GET` | `/api/status` | 健康检查 |
 
+> 详细暂存 API 参考文档见 [`docs/staging-api.md`](docs/staging-api.md) —— 包含所有请求/响应字段、preview 机制、错误码和 JavaScript 示例。
+
 ### 暂存确认示例（CORS 已启用）
 
 ```javascript
@@ -286,7 +288,10 @@ ImageHosting/
 │   ├── icon.png
 │   └── picture.svg
 │
-├── scripts/                # 打包脚本
+├── docs/
+│   └── staging-api.md      # 暂存 API 参考文档
+│
+├── scripts/                # 打包脚本├── scripts/                # 打包脚本
 │   ├── build.bat
 │   ├── build_msi.bat
 │   └── installer.wxs

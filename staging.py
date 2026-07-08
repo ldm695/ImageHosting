@@ -4,6 +4,8 @@ Staging (upload confirmation) for ImageHosting.
 Manages the staging area where uploaded files wait for confirmation.
 Provides three API endpoints: stage, confirm, cancel.
 """
+import base64
+import io
 import json
 import os
 import re
@@ -84,6 +86,37 @@ def cleanup_all_staging():
             pass
 
 
+# ── Preview ──────────────────────────────────────
+
+def _generate_preview(file_path: Path) -> str | None:
+    """Generate a base64 data URL preview thumbnail for a staged image."""
+    ext = file_path.suffix.lower()
+    try:
+        if ext in Config.PILLOW_FORMATS:
+            from PIL import Image
+            img = Image.open(file_path)
+            img.thumbnail((256, 256))
+            buf = io.BytesIO()
+            # Determine output MIME type
+            fmt_map = {'.png': 'PNG', '.jpg': 'JPEG', '.jpeg': 'JPEG',
+                       '.gif': 'GIF', '.webp': 'WEBP', '.bmp': 'PNG'}
+            out_fmt = fmt_map.get(ext, 'JPEG')
+            mime = f'image/{out_fmt.lower()}'
+            # Convert to RGB for JPEG
+            if out_fmt == 'JPEG' and img.mode in ('RGBA', 'LA', 'P'):
+                img = img.convert('RGB')
+            img.save(buf, format=out_fmt, quality=70)
+            b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+            return f'data:{mime};base64,{b64}'
+        elif ext == '.svg':
+            svg_text = file_path.read_text(encoding='utf-8')
+            b64 = base64.b64encode(svg_text.encode('utf-8')).decode('ascii')
+            return f'data:image/svg+xml;base64,{b64}'
+    except Exception:
+        pass
+    return None
+
+
 # ── Routes ───────────────────────────────────────
 
 @app.route('/api/upload/stage', methods=['POST'])
@@ -151,6 +184,9 @@ def api_upload_stage():
         _staging_timers[token] = timer
     timer.start()
 
+    # Generate preview thumbnail
+    preview = _generate_preview(staged_path)
+
     return jsonify({
         'token': token,
         'filename': safe,
@@ -159,6 +195,7 @@ def api_upload_stage():
         'expires_in': Config.STAGING_TIMEOUT,
         'url': url_for('serve_upload', group=group, filename=safe),
         'absolute_path': str((Config.UPLOAD_DIR / group / safe).resolve()),
+        'preview': preview,
     })
 
 
