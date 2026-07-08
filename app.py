@@ -706,6 +706,10 @@ def serve_thumbnail(group, filename):
 @app.route('/api/shutdown', methods=['POST'])
 def api_shutdown():
     """Shut down the server (used by tray restart / Exit)."""
+    # Apply pending port from settings.json so restart picks it up
+    _pending = load_settings()
+    if 'port' in _pending:
+        Config.PORT = int(_pending['port'])
     if _http_server is not None:
         srv = _http_server
         threading.Timer(0.5, lambda: srv.shutdown() if srv else None).start()
