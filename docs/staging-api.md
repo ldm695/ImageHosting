@@ -60,6 +60,7 @@ files: <file data>
   "token": "a1b2c3d4e5f67890a1b2c3d4e5f67890",
   "filename": "my_photo.jpg",
   "original_name": "My Photo (1).jpg",
+  "filename_changed": true,
   "group": "general",
   "expires_in": 300,
   "url": "/uploads/general/my_photo.jpg",
@@ -73,6 +74,7 @@ files: <file data>
 | `token` | string | UUID hex token (32 chars) — required for confirm/cancel |
 | `filename` | string | Server-side safe filename (sanitized, no path separators) |
 | `original_name` | string | Original filename from client |
+| `filename_changed` | bool | Whether `filename` differs from `original_name` (was sanitized) |
 | `group` | string | Target group |
 | `expires_in` | int | TTL in seconds before auto-cleanup |
 | `url` | string | Predicted final URL path (relative) |
@@ -108,6 +110,11 @@ const data = await res.json();
 
 // data.preview can be used immediately:
 previewImg.src = data.preview;
+
+// Warn if filename was sanitized:
+if (data.filename_changed) {
+  console.log('Filename sanitized:', data.original_name, '→', data.filename);
+}
 
 // Store token for later confirm/cancel:
 const token = data.token;

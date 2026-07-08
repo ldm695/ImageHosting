@@ -184,13 +184,18 @@ def api_upload_stage():
         _staging_timers[token] = timer
     timer.start()
 
+    # Detect if filename was sanitized
+    original_name = file.filename
+    filename_changed = (original_name != safe)
+
     # Generate preview thumbnail
     preview = _generate_preview(staged_path)
 
     return jsonify({
         'token': token,
         'filename': safe,
-        'original_name': file.filename,
+        'original_name': original_name,
+        'filename_changed': filename_changed,
         'group': group,
         'expires_in': Config.STAGING_TIMEOUT,
         'url': url_for('serve_upload', group=group, filename=safe),
