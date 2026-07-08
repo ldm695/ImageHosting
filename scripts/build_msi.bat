@@ -19,7 +19,7 @@ if %ERRORLEVEL% neq 0 ( echo FAILED & pause & exit /b 1 )
 echo OK
 
 echo [4/4] light.exe - linking MSI...
-light.exe "dist\installer.wixobj" "dist\ImageHosting.wixobj" -nologo -ext WixUIExtension -cultures:en-US -out "dist\ImageHosting-1.0.1.msi"
+light.exe "dist\installer.wixobj" "dist\ImageHosting.wixobj" -nologo -ext WixUIExtension -cultures:en-US -out "dist\ImageHosting-1.0.2.msi"
 if %ERRORLEVEL% neq 0 ( echo FAILED & pause & exit /b 1 )
 
 echo SUCCESS - dist\ImageHosting-1.0.1.msi

@@ -129,6 +129,30 @@ light.exe dist\installer.wixobj dist\ImageHosting.wixobj ^
 | `POST` | `/api/settings/browse` | 打开系统文件夹选择器 |
 | `POST` | `/api/shutdown` | 优雅关闭（托盘使用） |
 
+### 外部网站上传示例（CORS 已启用）
+
+```javascript
+const formData = new FormData();
+formData.append('files', fileInput.files[0]);
+
+fetch('http://192.168.8.146:6951/api/upload?group=wallpapers', {
+  method: 'POST',
+  body: formData,
+})
+.then(r => r.json())
+.then(data => {
+  console.log('图片URL:', data.uploaded[0].url);
+  console.log('磁盘路径:', data.uploaded[0].absolute_path);
+});
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `?group=名称` | 上传到指定分组 | `general` |
+| `filenames`（FormData 字段） | 自定义文件名 JSON 数组 | 使用原始文件名 |
+
+不传 `group` 时默认上传到 `general` 分组。
+
 ## 项目结构
 
 ```

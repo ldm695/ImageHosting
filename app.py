@@ -17,6 +17,7 @@ from flask import (
     Flask, render_template, request, jsonify,
     send_from_directory, url_for
 )
+from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 try:
@@ -57,6 +58,7 @@ def save_settings(data: dict):
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+CORS(app)
 
 # Apply persisted settings
 _persisted = load_settings()
@@ -191,14 +193,7 @@ def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP) -> dict | N
         'filename': filename,
         'group': group,
         'url': url_for('serve_upload', group=group, filename=filename),
-        'thumbnail_url': url_for('serve_thumbnail', group=group, filename=filename),
-        'size': stat.st_size,
-        'formatted_size': format_size(stat.st_size),
-        'created': datetime.fromtimestamp(stat.st_ctime).isoformat(),
-        'created_formatted': datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d %H:%M'),
-        'width': width,
-        'height': height,
-        'ext': ext,
+        'absolute_path': str(filepath.resolve()),
     }
 
 
