@@ -733,7 +733,14 @@ def request_entity_too_large(e):
 def page_not_found(e):
     if request.path.startswith('/api/'):
         return jsonify({'error': 'Endpoint not found'}), 404
-    return render_template('index.html', title=Config.SITE_TITLE), 404
+    return render_template('index.html',
+        title=Config.SITE_TITLE,
+        port=Config.PORT,
+        local_ip=get_local_ip(),
+        max_size_mb=Config.MAX_CONTENT_LENGTH // (1024 * 1024),
+        default_group=Config.DEFAULT_GROUP,
+        data_dir=str(Config.DATA_DIR),
+    ), 404
 
 
 # ── Entry ────────────────────────────────────────
