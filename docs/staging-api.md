@@ -26,7 +26,7 @@ All staging files live under the server's data directory:
 ```
 
 - `token` = 32 hex chars (UUID v4 hex)
-- `safe_filename` = sanitized filename (stripped of path separators, special chars)
+- `safe_filename` = validated filename (only letters, numbers, dots, underscores, hyphens)
 - `Config.DATA_DIR` defaults to `%APPDATA%\ImageHosting\` on Windows
 
 On server startup, any leftover staging files from a previous unclean shutdown are cleaned up automatically.
@@ -59,7 +59,7 @@ files: <file data>
 {
   "token": "a1b2c3d4e5f67890a1b2c3d4e5f67890",
   "filename": "my_photo.jpg",
-  "original_name": "My Photo (1).jpg",
+  "original_name": "my_photo.jpg",
   "group": "general",
   "expires_in": 300,
   "url": "/uploads/general/my_photo.jpg",
@@ -71,7 +71,7 @@ files: <file data>
 | Field | Type | Description |
 |---|---|---|
 | `token` | string | UUID hex token (32 chars) — required for confirm/cancel |
-| `filename` | string | Server-side safe filename (sanitized, no path separators) |
+| `filename` | string | Server-side filename (validated, identical to original if safe) |
 | `original_name` | string | Original filename from client |
 | `group` | string | Target group |
 | `expires_in` | int | TTL in seconds before auto-cleanup |
@@ -298,7 +298,7 @@ _staging_lock = threading.Lock()                    # protects timers dict
 
 - **Anti-abuse**: Maximum 100 pending uploads at a time (`STAGING_MAX_FILES`)
 - **Token validation**: Strict regex `[0-9a-f]{32}` — no path traversal possible
-- **Filename sanitization**: `werkzeug.secure_filename()` + manual fallback for non-ASCII names
+- **Filename validation**: Filenames must survive `werkzeug.secure_filename()` unchanged — non-ASCII, spaces, and special characters are rejected with 400
 - **File extension check**: Only `Config.ALLOWED_EXTENSIONS` are accepted
 - **Single-file only**: Only the first file from the form is processed, preventing batch abuse through staging
 
