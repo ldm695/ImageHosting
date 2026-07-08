@@ -433,16 +433,14 @@ def api_upload():
                     cn += orig_ext.lower()
                 use_name = cn
 
-        # Get safe filename but REJECT if already exists (no auto-rename)
+        # Validate filename (reject unsafe characters, no auto-sanitize)
         safe = secure_filename(use_name)
-        if not safe or Path(safe).stem == '':
-            name, ext = os.path.splitext(use_name)
-            ext = ext.lower()
-            safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', name)
-            safe = re.sub(r'\s+', '_', safe).strip('._')
-            if not safe:
-                safe = 'image'
-            safe += ext
+        if not safe or safe != use_name:
+            errors.append({
+                'filename': file.filename,
+                'error': 'Filename contains invalid or unsafe characters. Use only letters, numbers, dots, underscores, and hyphens.'
+            })
+            continue
 
         filepath = Config.UPLOAD_DIR / group / safe
         if filepath.exists():

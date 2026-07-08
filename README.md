@@ -177,11 +177,11 @@ fetch('http://192.168.8.146:6951/api/upload/stage', {
 ```bash
 # 1. 暂存
 curl -F "files=@photo.jpg" "http://localhost:6951/api/upload/stage?group=wallpapers"
-# → {"token": "abc123...", "filename": "photo.jpg", "original_name": "photo.jpg", "filename_changed": false, "expires_in": 300, "preview": "data:image/jpeg;base64,...", "url": "...", "absolute_path": "..."}
+# → {"token": "abc123...", "filename": "photo.jpg", "original_name": "photo.jpg", "expires_in": 300, "preview": "data:image/jpeg;base64,...", "url": "...", "absolute_path": "..."}
 
-# 文件名被安全化时（非 ASCII、空格、特殊字符），filename_changed 为 true：
+# 文件名含不安全字符（非 ASCII、空格、特殊符号）→ 400 拒绝，不自作主张修正：
 curl -F "files=@我的照片 (1).jpg" "http://localhost:6951/api/upload/stage"
-# → {"filename": "_.jpg", "original_name": "我的照片 (1).jpg", "filename_changed": true, ...}
+# → {"error": "Filename contains invalid or unsafe characters. Use only letters, numbers, dots, underscores, and hyphens."}
 
 # 2. 确认
 curl -X POST "http://localhost:6951/api/upload/confirm" \

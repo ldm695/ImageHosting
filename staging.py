@@ -147,16 +147,10 @@ def api_upload_stage():
         if len(_staging_timers) >= Config.STAGING_MAX_FILES:
             return jsonify({'error': 'Too many pending uploads. Confirm or cancel existing ones first.'}), 429
 
-    # Generate safe filename
+    # Validate filename (reject unsafe characters, no auto-sanitize)
     safe = secure_filename(file.filename)
-    if not safe or Path(safe).stem == '':
-        name, ext = os.path.splitext(file.filename)
-        ext = ext.lower()
-        safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', name)
-        safe = re.sub(r'\s+', '_', safe).strip('._')
-        if not safe:
-            safe = 'image'
-        safe += ext
+    if not safe or safe != file.filename:
+        return jsonify({'error': 'Filename contains invalid or unsafe characters. Use only letters, numbers, dots, underscores, and hyphens.'}), 400
 
     # Check name conflict before staging
     ensure_group_dirs(group)
@@ -193,18 +187,13 @@ def api_upload_stage():
         _staging_timers[token] = timer
     timer.start()
 
-    # Detect if filename was sanitized
-    original_name = file.filename
-    filename_changed = (original_name != safe)
-
     # Generate preview thumbnail
     preview = _generate_preview(staged_path)
 
     return jsonify({
         'token': token,
         'filename': safe,
-        'original_name': original_name,
-        'filename_changed': filename_changed,
+        'original_name': file.filename,
         'group': group,
         'expires_in': Config.STAGING_TIMEOUT,
         'url': url_for('serve_upload', group=group, filename=safe),
