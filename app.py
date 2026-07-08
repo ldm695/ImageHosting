@@ -282,10 +282,10 @@ def api_update_port():
         if port == Config.PORT:
             return jsonify({'error': 'Port is the same as the current one'}), 400
 
-        Config.PORT = port
+        # Save to settings.json only — takes effect on next restart
         save_settings({'port': port})
 
-        return jsonify({'success': True, 'port': port, '_applied_on_restart': True})
+        return jsonify({'success': True, 'saved_port': port, '_applied_on_restart': True})
     except (ValueError, TypeError):
         return jsonify({'error': 'Invalid port value'}), 400
 
