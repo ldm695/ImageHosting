@@ -64,7 +64,7 @@ def run_tray(get_port, *, server_stopped: threading.Event = None):
     Create and run the system tray icon (blocking).
 
     Args:
-        get_port: callable that returns the current server port (int)
+        get_port: callable returning the current configured port (int)
         server_stopped: Event to signal when the server should stop
     """
     if not HAS_TRAY:
@@ -72,18 +72,23 @@ def run_tray(get_port, *, server_stopped: threading.Event = None):
         return
 
     stop_flag = server_stopped or threading.Event()
+    # Capture the port that was actually running when the tray started
+    _running_port = get_port()
 
-    def _port_url(path=''):
-        return f'http://localhost:{get_port()}{path}'
+    def _url_for(path=''):
+        return f'http://localhost:{_running_port}{path}'
+
+    def _browse_url():
+        return f'http://localhost:{get_port()}'
 
     def action_open():
-        webbrowser.open(_port_url())
+        webbrowser.open(_browse_url())
 
     def action_restart():
-        """Send shutdown signal; the main loop in app.py will auto-restart."""
+        """Send shutdown signal to the running server; main loop will restart on new port."""
         import urllib.request
         try:
-            req = urllib.request.Request(_port_url('/api/shutdown'), data=b'{}',
+            req = urllib.request.Request(_url_for('/api/shutdown'), data=b'{}',
                                          headers={'Content-Type': 'application/json'})
             urllib.request.urlopen(req, timeout=3)
         except Exception:
@@ -93,7 +98,7 @@ def run_tray(get_port, *, server_stopped: threading.Event = None):
         stop_flag.set()
         try:
             import urllib.request
-            req = urllib.request.Request(_port_url('/api/shutdown'), data=b'{}',
+            req = urllib.request.Request(_url_for('/api/shutdown'), data=b'{}',
                                          headers={'Content-Type': 'application/json'})
             urllib.request.urlopen(req, timeout=1)
         except Exception:
