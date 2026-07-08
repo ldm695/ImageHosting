@@ -32,6 +32,11 @@ class Config:
     ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico'}
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024       # 50 MB
 
+    # ── Staging (upload confirmation) ───────────────
+    STAGING_DIR = DATA_DIR / 'staging'
+    STAGING_TIMEOUT = 300                         # Default 5 minutes
+    STAGING_MAX_FILES = 100                       # Anti-abuse limit
+
     # ── Thumbnails ─────────────────────────────────
     THUMBNAIL_SIZE = (400, 400)                  # (width, height) in pixels
     THUMBNAIL_QUALITY = 85

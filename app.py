@@ -9,8 +9,8 @@ import re
 import json
 import shutil
 import argparse
+import threading
 import mimetypes
-from datetime import datetime
 from pathlib import Path
 
 from flask import (
@@ -19,12 +19,6 @@ from flask import (
 )
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-
-try:
-    from PIL import Image
-    HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
 
 from config import Config
 
@@ -66,6 +60,10 @@ if 'data_dir' in _persisted and not any(a.startswith('--data-dir') for a in sys.
     Config.DATA_DIR = Path(_persisted['data_dir'])
     Config.UPLOAD_DIR = Config.DATA_DIR / 'uploads'
     Config.THUMBNAIL_DIR = Config.DATA_DIR / 'thumbnails'
+if 'staging_timeout' in _persisted:
+    Config.STAGING_TIMEOUT = int(_persisted['staging_timeout'])
+if 'port' in _persisted and not any(a.startswith('--port') for a in sys.argv[1:]):
+    Config.PORT = int(_persisted['port'])
 
 # Ensure root dirs exist
 Config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -73,6 +71,8 @@ Config.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
 # Ensure default group dirs exist
 (Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
 (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+# Ensure staging dir exists and clean leftover files from last run
+Config.STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
 # Register MIME types
 mimetypes.add_type('image/webp', '.webp')
@@ -80,164 +80,18 @@ mimetypes.add_type('image/avif', '.avif')
 
 # ── Utilities ────────────────────────────────────
 
-def allowed_file(filename: str) -> bool:
-    """Check if file extension is allowed"""
-    ext = os.path.splitext(filename)[1].lower()
-    return ext in Config.ALLOWED_EXTENSIONS
+from utils import *  # noqa: F403, E402
 
+# ── Staging (upload confirmation) ─────────────────
 
-def get_local_ip() -> str:
-    """Get local LAN IP address"""
-    try:
-        import socket
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.settimeout(0.1)
-            s.connect(('10.255.255.255', 1))
-            ip = s.getsockname()[0]
-        return ip
-    except Exception:
-        return '127.0.0.1'
+# Register this module as 'app' so staging.py's 'from app import app' works
+import sys
+sys.modules['app'] = sys.modules[__name__]
 
+import staging  # noqa: F811, E402
+# cleanup_all_staging() is called in main() after all imports
 
-def format_size(size_bytes: int) -> str:
-    """Format file size for human reading"""
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
-
-
-def is_valid_group_name(name: str) -> bool:
-    """Validate group name"""
-    if not name or len(name) > 64:
-        return False
-    return bool(re.match(r'^[a-zA-Z0-9_\-]+$', name))
-
-
-def make_safe_filename(filename: str, group: str = Config.DEFAULT_GROUP) -> str:
-    """
-    Generate a safe filename (with group-level duplicate detection)
-    """
-    name, ext = os.path.splitext(filename)
-    ext = ext.lower()
-
-    safe = secure_filename(filename)
-    if not safe or Path(safe).stem == '':
-        safe = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', name)
-        safe = re.sub(r'\s+', '_', safe).strip('._')
-        if not safe:
-            safe = 'image'
-        safe += ext
-
-    # Check duplicates within group
-    stem, ext = os.path.splitext(safe)
-    counter = 0
-    while (Config.UPLOAD_DIR / group / safe).exists():
-        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        safe = f"{stem}_{ts}{ext}"
-        counter += 1
-        if counter > 100:
-            break
-
-    return safe
-
-
-def generate_thumbnail(src_path: Path, dst_path: Path) -> bool:
-    """Generate thumbnail, return True on success"""
-    if not HAS_PIL:
-        return False
-    ext = src_path.suffix.lower()
-    if ext not in Config.PILLOW_FORMATS:
-        return False
-    try:
-        with Image.open(src_path) as img:
-            if img.mode in ('RGBA', 'P'):
-                img = img.convert('RGBA')
-
-            img.thumbnail(Config.THUMBNAIL_SIZE, Image.LANCZOS)
-
-            out_ext = dst_path.suffix.lower()
-            fmt = {
-                '.png': 'PNG', '.jpg': 'JPEG', '.jpeg': 'JPEG',
-                '.gif': 'GIF', '.webp': 'WEBP', '.bmp': 'BMP',
-            }.get(out_ext, 'JPEG')
-
-            if fmt == 'JPEG' and img.mode == 'RGBA':
-                img = img.convert('RGB')
-
-            img.save(dst_path, fmt, quality=Config.THUMBNAIL_QUALITY)
-            return True
-    except Exception:
-        return False
-
-
-def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP) -> dict | None:
-    """Get single image metadata"""
-    filepath = Config.UPLOAD_DIR / group / filename
-    if not filepath.exists() or not filepath.is_file():
-        return None
-
-    stat = filepath.stat()
-    ext = filepath.suffix.lower()
-
-    width = height = None
-    if ext in Config.PILLOW_FORMATS and HAS_PIL:
-        try:
-            with Image.open(filepath) as img:
-                width, height = img.size
-        except Exception:
-            pass
-
-    return {
-        'filename': filename,
-        'group': group,
-        'url': url_for('serve_upload', group=group, filename=filename),
-        'absolute_path': str(filepath.resolve()),
-    }
-
-
-def scan_images(group: str = Config.DEFAULT_GROUP) -> list[dict]:
-    """Scan group directory, return images sorted by newest first"""
-    group_dir = Config.UPLOAD_DIR / group
-    if not group_dir.exists():
-        return []
-
-    images = []
-    for f in sorted(group_dir.iterdir(),
-                     key=lambda p: p.stat().st_ctime, reverse=True):
-        if f.is_file() and allowed_file(f.name):
-            info = get_image_info(f.name, group)
-            if info:
-                images.append(info)
-    return images
-
-
-def scan_groups() -> list[dict]:
-    """Scan all groups (subdirectories), sorted default first then alpha"""
-    groups = []
-    for d in sorted(Config.UPLOAD_DIR.iterdir()):
-        if d.is_dir():
-            count = 0
-            try:
-                count = len([f for f in d.iterdir()
-                            if f.is_file() and allowed_file(f.name)])
-            except Exception:
-                pass
-            groups.append({
-                'name': d.name,
-                'count': count,
-            })
-    # Default group first
-    groups.sort(key=lambda g: (0 if g['name'] == Config.DEFAULT_GROUP else 1, g['name']))
-    return groups
-
-
-def ensure_group_dirs(group: str):
-    """Ensure group directories exist"""
-    (Config.UPLOAD_DIR / group).mkdir(parents=True, exist_ok=True)
-    (Config.THUMBNAIL_DIR / group).mkdir(parents=True, exist_ok=True)
-
+_http_server = None  # Set by make_server in _serve_forever()
 
 # ── Page Routes ─────────────────────────────────
 
@@ -262,6 +116,7 @@ def api_get_settings():
     return jsonify({
         'data_dir': str(Config.DATA_DIR),
         'port': Config.PORT,
+        'staging_timeout': Config.STAGING_TIMEOUT,
     })
 
 
@@ -285,25 +140,24 @@ def api_browse_folder():
         return jsonify({'error': f'Failed to open folder picker: {str(e)}'}), 500
 
 
-@app.route('/api/settings', methods=['PUT'])
-def api_update_settings():
-    """Update settings. Migrates existing images and switches at runtime."""
-    data = request.get_json(silent=True) or {}
-    new_data_dir = (data.get('data_dir', '') or '').strip()
 
-    if not new_data_dir:
+@app.route('/api/settings/data-dir', methods=['PUT'])
+def api_update_data_dir():
+    """Update storage directory with file migration."""
+    data = request.get_json(silent=True) or {}
+    new_dir = (data.get('data_dir', '') or '').strip()
+
+    if not new_dir:
         return jsonify({'error': 'Directory path is required'}), 400
 
-    new_root = Path(new_data_dir).resolve()
+    new_root = Path(new_dir).resolve()
     old_root = Config.DATA_DIR.resolve()
 
     if new_root == old_root:
         return jsonify({'error': 'New directory is the same as the current one'}), 400
-
     if not new_root.parent.exists():
         return jsonify({'error': f'Parent directory "{new_root.parent}" does not exist'}), 400
 
-    # New paths
     new_upload = new_root / 'uploads'
     new_thumb = new_root / 'thumbnails'
 
@@ -320,12 +174,14 @@ def api_update_settings():
     migration_log = {'moved_uploads': 0, 'moved_thumbnails': 0, 'groups': []}
 
     try:
-        # Migrate each group from old → new
+        # Migrate each group from old to new
         if Config.UPLOAD_DIR.exists():
             for group_dir in Config.UPLOAD_DIR.iterdir():
                 if not group_dir.is_dir():
                     continue
                 gname = group_dir.name
+
+                # Migrate original images
                 files = [f for f in group_dir.iterdir()
                         if f.is_file() and allowed_file(f.name)]
                 if files:
@@ -335,7 +191,7 @@ def api_update_settings():
                         shutil.move(str(f), str(dst_dir / f.name))
                         migration_log['moved_uploads'] += 1
 
-                # Thumbnails
+                # Migrate thumbnails for this group
                 old_td = Config.THUMBNAIL_DIR / gname
                 if old_td.exists():
                     tfiles = [f for f in old_td.iterdir() if f.is_file()]
@@ -348,11 +204,10 @@ def api_update_settings():
 
                 migration_log['groups'].append(gname)
 
-        # Clean up old uploads/thumbnails dirs only (NOT parent — avoid accidental deletion)
+        # Clean up old uploads/thumbnails dirs only (NOT parent)
         for p in [Config.THUMBNAIL_DIR, Config.UPLOAD_DIR]:
             if p.exists():
                 try:
-                    # Remove empty group subdirs first
                     for child in sorted(p.iterdir(), reverse=True):
                         if child.is_dir():
                             try:
@@ -366,7 +221,7 @@ def api_update_settings():
     except Exception as e:
         migration_log['error'] = str(e)
 
-    # ── Switch at runtime ─────────────────────────────────
+    # Switch at runtime
     Config.DATA_DIR = new_root
     Config.UPLOAD_DIR = new_upload
     Config.THUMBNAIL_DIR = new_thumb
@@ -375,21 +230,64 @@ def api_update_settings():
     (Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
     (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
 
-    # Persist to settings.json
     save_settings({'data_dir': str(new_root)})
 
     msg = 'Storage directory updated instantly.'
     if migration_log['moved_uploads'] > 0:
         msg += f' Migrated {migration_log["moved_uploads"]} image(s).'
     if migration_log.get('error'):
-        msg += f' Warning: partial migration — {migration_log["error"]}'
+        msg += f' Warning: partial migration - {migration_log["error"]}'
 
     return jsonify({
         'success': True,
-        'migration': migration_log,
         'message': msg,
+        'data_dir': str(new_root),
+        'migration': migration_log,
     })
 
+
+@app.route('/api/settings/staging-timeout', methods=['PUT'])
+def api_update_staging_timeout():
+    """Update staging timeout only."""
+    data = request.get_json(silent=True) or {}
+    new_timeout = data.get('staging_timeout')
+
+    if new_timeout is None:
+        return jsonify({'error': 'staging_timeout is required'}), 400
+
+    try:
+        timeout = int(new_timeout)
+        if timeout < 10 or timeout > 3600:
+            return jsonify({'error': 'Staging timeout must be between 10 and 3600 seconds'}), 400
+        Config.STAGING_TIMEOUT = timeout
+        save_settings({'staging_timeout': timeout})
+        return jsonify({'success': True, 'staging_timeout': timeout})
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid timeout value'}), 400
+
+
+@app.route('/api/settings/port', methods=['PUT'])
+def api_update_port():
+    """Update server port with availability check and auto-restart."""
+    data = request.get_json(silent=True) or {}
+    new_port = data.get('port')
+
+    if new_port is None:
+        return jsonify({'error': 'port is required'}), 400
+
+    try:
+        port = int(new_port)
+        if port < 1024 or port > 65535:
+            return jsonify({'error': 'Port must be between 1024 and 65535'}), 400
+        if port == Config.PORT:
+            return jsonify({'error': 'Port is the same as the current one'}), 400
+
+        Config.PORT = port
+        save_settings({'port': port})
+
+        return jsonify({'success': True, 'port': port, '_applied_on_restart': True})
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid port value'}), 400
 
 # ── Group API ────────────────────────────────────
 
@@ -807,10 +705,10 @@ def serve_thumbnail(group, filename):
 
 @app.route('/api/shutdown', methods=['POST'])
 def api_shutdown():
-    """Gracefully shut down the Flask server (used by tray icon)"""
-    shutdown = request.environ.get('werkzeug.server.shutdown')
-    if shutdown:
-        shutdown()
+    """Gracefully shut down the Flask server (used by tray/restart)"""
+    old_server = _http_server
+    if old_server is not None:
+        threading.Timer(0.5, lambda: old_server.shutdown() if old_server else None).start()
     return jsonify({'success': True})
 
 
@@ -895,16 +793,27 @@ def _apply_cli_args(args):
         (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
 
 
-def _serve_forever():
-    """Run Flask (blocking)."""
+def _serve_console():
+    """Run Flask in console mode (clean Ctrl+C handling)."""
     app.run(host=Config.HOST, port=Config.PORT, debug=False, use_reloader=False)
 
 
+def _serve_tray():
+    """Run Flask using make_server (needed for tray restart support)."""
+    from werkzeug.serving import make_server
+    global _http_server
+    _http_server = make_server(Config.HOST, Config.PORT, app)
+    _http_server.serve_forever()
+
+
 def main_console():
-    """Launch in console mode (blocking — Ctrl+C to stop)."""
+    """Launch in console mode. Single Ctrl+C stops the server."""
     local_ip = get_local_ip()
     print_banner(local_ip=local_ip, port=Config.PORT)
-    _serve_forever()
+    try:
+        _serve_console()
+    except KeyboardInterrupt:
+        print("\nShutting down…")
 
 
 def main_tray():
@@ -917,10 +826,10 @@ def main_tray():
 
     def run_with_restart():
         while not server_stopped.is_set():
-            _serve_forever()
+            _serve_tray()
             # When Flask stops (shutdown API called), check if we should restart
             if not server_stopped.is_set():
-                # Small delay then re-enter _serve_forever for a clean restart
+                # Small delay then re-enter _serve_tray for a clean restart
                 time.sleep(0.3)
 
     import time
@@ -943,6 +852,9 @@ def main():
     use_tray = args.tray and not args.no_tray
 
     _apply_cli_args(args)
+
+    # Clean up leftover staged files from last run
+    staging.cleanup_all_staging()
 
     if use_tray:
         main_tray()

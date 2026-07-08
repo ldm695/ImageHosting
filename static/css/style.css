@@ -2,57 +2,7 @@
    ImageHosting — Material Design 3 (Dark Theme)
    ═══════════════════════════════════════════════════════════ */
 
-/* ── Design Tokens ─────────────────────────────── */
-
-:root {
-  /* Color — MD3 dark theme */
-  --md-primary: #d0bcff;
-  --md-on-primary: #381e72;
-  --md-primary-container: #4f378b;
-  --md-on-primary-container: #eaddff;
-  --md-secondary: #ccc2dc;
-  --md-on-secondary: #332d41;
-  --md-tertiary: #efb8c8;
-  --md-error: #f2b8b5;
-  --md-on-error: #601410;
-  --md-error-container: #8c1d18;
-  --md-surface: #1c1b1f;
-  --md-surface-dim: #141218;
-  --md-surface-bright: #3b383e;
-  --md-surface-container: #211f26;
-  --md-surface-container-high: #2b2930;
-  --md-surface-container-highest: #36343b;
-  --md-on-surface: #e6e1e5;
-  --md-on-surface-variant: #cac4d0;
-  --md-outline: #938f99;
-  --md-outline-variant: #49454f;
-
-  /* Elevation shadows (MD3) */
-  --md-elevation-0: none;
-  --md-elevation-1: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
-  --md-elevation-2: 0 2px 6px rgba(0,0,0,0.3), 0 1px 4px rgba(0,0,0,0.2);
-  --md-elevation-3: 0 4px 12px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.2);
-  --md-elevation-4: 0 8px 24px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.2);
-  --md-elevation-5: 0 12px 48px rgba(0,0,0,0.5), 0 6px 20px rgba(0,0,0,0.2);
-
-  /* Shape */
-  --md-shape-xs: 8px;
-  --md-shape-sm: 12px;
-  --md-shape-md: 16px;
-  --md-shape-lg: 20px;
-  --md-shape-xl: 28px;
-  --md-shape-full: 9999px;
-
-  /* Motion */
-  --md-motion-emphasized: 0.3s cubic-bezier(0.2, 0, 0, 1);
-  --md-motion-standard: 0.2s cubic-bezier(0.2, 0, 0, 1);
-  --md-motion-decelerate: 0.25s cubic-bezier(0.05, 0.7, 0.1, 1);
-
-  /* Typography */
-  --md-font: "Google Sans", "Roboto", "Noto Sans SC", "Microsoft YaHei",
-             -apple-system, BlinkMacSystemFont, sans-serif;
-  --md-font-mono: "Google Sans Mono", "SF Mono", "Fira Code", "Consolas", monospace;
-}
+@import 'design-tokens.css';
 
 /* ── Material Symbols ──────────────────────────── */
 

@@ -2,6 +2,11 @@
 setlocal enabledelayedexpansion
 cd /d "%~dp0.."
 
+set /p VERSION="Enter version (default 1.0.3): "
+if "%VERSION%"=="" set VERSION=1.0.3
+echo Building ImageHosting version %VERSION%
+echo.
+
 echo [1/4] PyInstaller - bundling app...
 python -m PyInstaller --onedir --name ImageHosting --icon "assets\icon.ico" --add-data "templates;templates" --add-data "static;static" --add-data "assets\icon.ico;." --hidden-import PIL --hidden-import pystray --noconsole --clean app.py
 if %ERRORLEVEL% neq 0 ( echo FAILED & pause & exit /b 1 )
@@ -14,14 +19,24 @@ if %ERRORLEVEL% neq 0 ( echo heat.exe FAILED & pause & exit /b 1 )
 echo OK
 
 echo [3/4] candle.exe - compiling...
-candle.exe "scripts\installer.wxs" "dist\ImageHosting.wxs" -nologo -dSourceDir="dist\ImageHosting" -out "dist\\"
+candle.exe "scripts\installer.wxs" "dist\ImageHosting.wxs" -nologo -dSourceDir="dist\ImageHosting" -dVersion=%VERSION% -out "dist\\"
 if %ERRORLEVEL% neq 0 ( echo FAILED & pause & exit /b 1 )
 echo OK
 
 echo [4/4] light.exe - linking MSI...
-light.exe "dist\installer.wixobj" "dist\ImageHosting.wixobj" -nologo -ext WixUIExtension -cultures:en-US -out "dist\ImageHosting-1.0.2.msi"
+light.exe "dist\installer.wixobj" "dist\ImageHosting.wixobj" -nologo -ext WixUIExtension -cultures:en-US -out "dist\ImageHosting-%VERSION%.msi"
 if %ERRORLEVEL% neq 0 ( echo FAILED & pause & exit /b 1 )
 
-echo SUCCESS - dist\ImageHosting-1.0.1.msi
+echo [5/5] Cleaning up intermediate files...
+if exist "build" rmdir /S /Q "build"
+if exist "ImageHosting.spec" del /Q "ImageHosting.spec"
+if exist "dist\ImageHosting" rmdir /S /Q "dist\ImageHosting"
+if exist "dist\ImageHosting.wxs" del /Q "dist\ImageHosting.wxs"
+del /Q "dist\*.wixobj" 2>nul
+del /Q "dist\*.wixpdb" 2>nul
+echo OK
+
+echo.
+echo SUCCESS - dist\ImageHosting-%VERSION%.msi
 pause
 endlocal

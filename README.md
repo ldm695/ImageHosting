@@ -5,6 +5,7 @@
 ## 功能
 
 - **上传与管理** — 拖拽/点击上传，网格浏览，灯箱预览
+- **暂存确认** — 先暂存再确认，超时自动清理未确认的文件
 - **分组** — 按文件夹组织图片，自由创建/切换/删除分组
 - **重命名** — 灯箱中直接重命名图片
 - **批量操作** — 多选后批量移动或删除
@@ -12,6 +13,8 @@
 - **排序** — 按名称（A-Z / Z-A）或上传时间（最新/最早）排序
 - **复制链接** — 支持 Markdown、HTML、原始 URL 三种格式
 - **运行时切换目录** — 设置中修改存储路径，文件自动迁移
+- **运行时配置端口** — 设置中修改端口，下次启动生效
+- **运行时配置超时** — 设置中修改暂存确认超时时间
 - **系统托盘** — 后台运行，托盘图标支持双击打开浏览器
 - **Material Design 3** — 暗色主题，响应式布局（桌面到手机）
 - **局域网访问** — 启动时显示 IP，同网络设备直接访问
@@ -29,21 +32,24 @@ python app.py
 
 ```bash
 python app.py                          # 默认端口 6951
-python app.py --port 8080              # 自定义端口
+python app.py --port 8080              # 自定义端口（覆盖 settings.json）
 python app.py --data-dir D:\我的图库    # 自定义存储目录
-python app.py --tray                   # 托盘模式运行
+python app.py --tray                   # 托盘模式运行（打包后默认）
 ```
+
+## Settings 面板
+
+网页端 Settings 对话框支持三项独立配置，每项单独保存，互不干扰：
+
+| 设置项 | 说明 | 生效时机 |
+|--------|------|---------|
+| Image Storage Root Directory | 修改图片存储根目录 | 立即迁移（自动移动文件 + 清理旧目录） |
+| Staging Timeout (minutes) | 暂存确认超时时间 | 立即生效 |
+| Server Port | 服务端口 | 下次启动生效（保存后重启服务器） |
 
 ## 打包 MSI 安装包
 
-### 更新版本号
-
-改两个地方：
-
-| 文件 | 修改 |
-|------|------|
-| `scripts\installer.wxs` | `Version="1.0.1"` → 新版本号 |
-| `scripts\build_msi.bat` | 输出文件名 `ImageHosting-1.0.1.msi` → 新版本号 |
+运行 `scripts\build_msi.bat`，按提示输入版本号即可一键打包。
 
 ### 前置条件
 
@@ -57,7 +63,11 @@ WiX Toolset v3.14+（确保 `candle` / `light` / `heat` 在 PATH 中）
 
 ```bash
 scripts\build_msi.bat
+Enter version (default 1.0.3):
 ```
+
+脚本会自动完成：PyInstaller → heat → candle → light → 清理中间文件。
+最终输出 `dist\ImageHosting-X.X.X.msi`，仅保留 MSI 文件。
 
 ### 手动分步
 
@@ -78,15 +88,16 @@ heat.exe dir "dist\ImageHosting" -nologo -ag -cg HarvestedFiles ^
 
 # 4. candle — 编译
 candle.exe scripts\installer.wxs dist\ImageHosting.wxs ^
-  -nologo -dSourceDir="dist\ImageHosting" -out "dist\"
+  -nologo -dSourceDir="dist\ImageHosting" -dVersion=1.0.3 -out "dist\"
 
 # 5. light — 链接为 MSI
 light.exe dist\installer.wixobj dist\ImageHosting.wixobj ^
   -nologo -ext WixUIExtension -cultures:en-US ^
-  -out "dist\ImageHosting-1.0.1.msi"
-```
+  -out "dist\ImageHosting-1.0.3.msi"
 
-输出：`dist\ImageHosting-1.0.1.msi`
+# 6. 清理中间文件
+rm -rf build ImageHosting.spec dist\ImageHosting dist\*.wxs dist\*.wixobj dist\*.wixpdb
+```
 
 ## 安装目录结构
 
@@ -95,6 +106,7 @@ light.exe dist\installer.wixobj dist\ImageHosting.wixobj ^
 | `C:\Program Files (x86)\ImageHosting\` | 程序文件（只读） |
 | `%APPDATA%\ImageHosting\uploads\` | 上传的图片（可读写） |
 | `%APPDATA%\ImageHosting\thumbnails\` | 缩略图缓存 |
+| `%APPDATA%\ImageHosting\staging\` | 暂存区（自动清理） |
 | `%APPDATA%\ImageHosting\settings.json` | 持久化设置 |
 
 ## 系统托盘
@@ -106,7 +118,7 @@ light.exe dist\installer.wixobj dist\ImageHosting.wixobj ^
 | **左键单击** | 弹出右键菜单 |
 | **左键双击** | 打开浏览器 (`http://localhost:6951`) |
 | **菜单：Open Browser** | 打开浏览器 |
-| **菜单：Restart Server** | 重启 Flask 服务 |
+| **菜单：Restart Server** | 重启 Flask 服务（新端口生效） |
 | **菜单：Exit** | 退出程序 |
 
 ## API 概览
@@ -116,6 +128,9 @@ light.exe dist\installer.wixobj dist\ImageHosting.wixobj ^
 | `GET` | `/` | 主页面 |
 | `GET` | `/api/images?group=general` | 获取分组图片列表 |
 | `POST` | `/api/upload?group=general` | 上传图片（支持重命名） |
+| `POST` | `/api/upload/stage` | 暂存上传（返回 token + 预测路径） |
+| `POST` | `/api/upload/confirm` | 确认暂存文件（移入正式目录） |
+| `POST` | `/api/upload/cancel` | 取消暂存（删除临时文件） |
 | `DELETE` | `/api/image/<name>?group=general` | 删除图片 |
 | `PUT` | `/api/image/<name>/rename?group=general` | 重命名图片 |
 | `PUT` | `/api/image/<name>/move?group=general` | 移动图片到其他分组 |
@@ -125,9 +140,78 @@ light.exe dist\installer.wixobj dist\ImageHosting.wixobj ^
 | `POST` | `/api/groups` | 创建分组 |
 | `DELETE` | `/api/groups/<name>` | 删除分组 |
 | `GET` | `/api/settings` | 获取当前设置 |
-| `PUT` | `/api/settings` | 修改存储目录（自动迁移） |
+| `PUT` | `/api/settings/data-dir` | 修改存储目录（自动迁移） |
+| `PUT` | `/api/settings/staging-timeout` | 修改暂存超时 |
+| `PUT` | `/api/settings/port` | 修改端口（下次启动生效） |
 | `POST` | `/api/settings/browse` | 打开系统文件夹选择器 |
 | `POST` | `/api/shutdown` | 优雅关闭（托盘使用） |
+| `GET` | `/api/status` | 健康检查 |
+
+### 暂存确认示例（CORS 已启用）
+
+```javascript
+// 1. 暂存上传 — 文件进入缓存区
+fetch('http://192.168.8.146:6951/api/upload/stage', {
+  method: 'POST',
+  body: formData,
+})
+.then(r => r.json())
+.then(data => {
+  const token = data.token;
+  console.log('暂存成功，token:', token);
+  console.log('预测路径:', data.url);
+
+  // 2. 确认上传 — 移入正式目录
+  fetch('http://192.168.8.146:6951/api/upload/confirm', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: token }),
+  })
+  .then(r => r.json())
+  .then(result => console.log('确认结果:', result));
+});
+```
+
+```bash
+# 1. 暂存
+curl -F "files=@photo.jpg" "http://localhost:6951/api/upload/stage?group=wallpapers"
+# → {"token": "abc123...", "filename": "photo.jpg", "expires_in": 300, "url": "...", "absolute_path": "..."}
+
+# 2. 确认
+curl -X POST "http://localhost:6951/api/upload/confirm" \
+  -H "Content-Type: application/json" \
+  -d '{"token": "abc123..."}'
+# → {"success": true, "filename": "photo.jpg", "url": "/uploads/wallpapers/photo.jpg", ...}
+
+# 3. 取消（可选）
+curl -X POST "http://localhost:6951/api/upload/cancel" \
+  -H "Content-Type: application/json" \
+  -d '{"token": "abc123..."}'
+# → {"success": true}
+```
+
+超时时间在 Settings 页面配置，默认为 5 分钟。确认时若目标文件名已存在则返回 409 错误，暂存文件保留可在改名后重试。
+
+### Settings API 独立调用示例
+
+三个设置项有独立的端点，互不干扰：
+
+```bash
+# 只改超时
+curl -X PUT "http://localhost:6951/api/settings/staging-timeout" \
+  -H "Content-Type: application/json" \
+  -d '{"staging_timeout": 600}'
+
+# 只改端口（下次启动生效）
+curl -X PUT "http://localhost:6951/api/settings/port" \
+  -H "Content-Type: application/json" \
+  -d '{"port": 8080}'
+
+# 只改存储目录（自动迁移）
+curl -X PUT "http://localhost:6951/api/settings/data-dir" \
+  -H "Content-Type: application/json" \
+  -d '{"data_dir": "D:\\MyImages"}'
+```
 
 ### 外部网站上传示例（CORS 已启用）
 
@@ -190,8 +274,10 @@ curl -X POST "http://localhost:6951/api/images/batch-delete" \
 
 ```
 ImageHosting/
-├── app.py                  # Flask 主程序
+├── app.py                  # Flask 主程序（入口 + 路由）
 ├── config.py               # 配置
+├── utils.py                # 工具函数
+├── staging.py              # 暂存状态 + API 路由
 ├── tray.py                 # 系统托盘
 ├── requirements.txt        # 依赖
 │
@@ -206,11 +292,14 @@ ImageHosting/
 │   └── installer.wxs
 │
 ├── templates/
-│   └── index.html          # 单页 Web UI
+│   └── index.html          # 单页 Web UI（HTML 结构）
 │
 └── static/
-    └── css/
-        └── style.css       # Material Design 3 暗色主题
+    ├── css/
+    │   ├── design-tokens.css   # MD3 设计令牌（颜色、阴影、形状）
+    │   └── style.css           # 组件样式
+    └── js/
+        └── app.js              # 前端应用逻辑
 ```
 
 ## 技术栈
