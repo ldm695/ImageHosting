@@ -119,7 +119,6 @@ def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP) -> dict | N
         return None
 
     ext = filepath.suffix.lower()
-    stat = filepath.stat()
 
     width = height = None
     if ext in Config.PILLOW_FORMATS and HAS_PIL:
@@ -129,18 +128,11 @@ def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP) -> dict | N
         except Exception:
             pass
 
-    created_ts = stat.st_ctime
-    created_dt = datetime.fromtimestamp(created_ts)
-
     return {
         'filename': filename,
         'group': group,
         'url': url_for('serve_upload', group=group, filename=filename),
         'absolute_path': str(filepath.resolve()),
-        'size': stat.st_size,
-        'formatted_size': format_size(stat.st_size),
-        'created': created_dt.isoformat(),
-        'created_formatted': created_dt.strftime('%Y-%m-%d %H:%M'),
     }
 
 
