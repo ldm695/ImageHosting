@@ -61,6 +61,7 @@ files: <file data>
   "filename": "my_photo.jpg",
   "original_name": "My Photo (1).jpg",
   "filename_changed": true,
+  "name_conflict": false,
   "group": "general",
   "expires_in": 300,
   "url": "/uploads/general/my_photo.jpg",
@@ -75,6 +76,7 @@ files: <file data>
 | `filename` | string | Server-side safe filename (sanitized, no path separators) |
 | `original_name` | string | Original filename from client |
 | `filename_changed` | bool | Whether `filename` differs from `original_name` (was sanitized) |
+| `name_conflict` | bool | Whether a file with the same name already exists in target group |
 | `group` | string | Target group |
 | `expires_in` | int | TTL in seconds before auto-cleanup |
 | `url` | string | Predicted final URL path (relative) |
@@ -87,6 +89,10 @@ files: <file data>
 - Small images keep their original size (never upscaled)
 - Supported formats: PNG, JPEG, GIF, WebP, BMP, SVG
 - Unsupported formats return `null`
+
+**Name conflict detection:**
+
+`name_conflict: true` means a file with the same name already exists in the target group. The stage still succeeds (file saved to staging area), but when the frontend sees `name_conflict: true`, it should prompt the user to rename before confirming. Confirm will overwrite the existing file silently.
 
 **Error Responses:**
 
@@ -114,6 +120,11 @@ previewImg.src = data.preview;
 // Warn if filename was sanitized:
 if (data.filename_changed) {
   console.log('Filename sanitized:', data.original_name, '→', data.filename);
+}
+
+// Warn if name conflicts with existing file:
+if (data.name_conflict) {
+  console.log('File "' + data.filename + '" already exists — will overwrite on confirm');
 }
 
 // Store token for later confirm/cancel:
@@ -163,19 +174,9 @@ Content-Type: application/json
 |---|---|
 | 400 | Missing or invalid token format |
 | 404 | Token not found or expired (auto-cleaned after `expires_in` seconds) |
-| 409 | File already exists in target group — **token is preserved** for retry |
 | 500 | File move failure or metadata read failure |
 
-**Name Conflict Handling (409):**
-
-```json
-{
-  "error": "File \"my_photo.jpg\" already exists in this group",
-  "token": "a1b2c3d4e5f67890a1b2c3d4e5f67890"
-}
-```
-
-The `token` field is returned so the client can rename the file and re-submit the same token to confirm. No need to re-upload.
+> Name conflict detection is now handled at the **stage** step. Confirm will **overwrite** the existing file silently. Check `name_conflict` in the stage response and prompt the user before confirming.
 
 **JavaScript Example:**
 
@@ -186,14 +187,7 @@ const res = await fetch('/api/upload/confirm', {
   body: JSON.stringify({ token: token, group: 'pets' }),
 });
 
-if (res.status === 409) {
-  const data = await res.json();
-  // File name conflict — prompt user to rename, then re-confirm
-  const newName = prompt('File exists. Rename?', 'my_photo_new.jpg');
-  if (newName) {
-    await renameAndReConfirm(data.token, newName);
-  }
-} else if (res.ok) {
+if (res.ok) {
   const data = await res.json();
   console.log('Upload confirmed:', data.filename);
 }
