@@ -196,7 +196,7 @@ curl -X POST "http://localhost:6951/api/upload/cancel" \
 # → {"success": true}
 ```
 
-超时时间在 Settings 页面配置，默认为 5 分钟。重名检测已内置在 stage 响应中（`name_conflict` 字段），若存在同名文件，confirm 会直接覆盖。
+超时时间在 Settings 页面配置，默认为 5 分钟。若目标分组已存在同名文件，stage 会返回 409 错误，不会暂存。
 
 ### Settings API 独立调用示例
 

@@ -158,6 +158,15 @@ def api_upload_stage():
             safe = 'image'
         safe += ext
 
+    # Check name conflict before staging
+    ensure_group_dirs(group)
+    if (Config.UPLOAD_DIR / group / safe).exists():
+        return jsonify({
+            'error': f'File "{safe}" already exists in group "{group}"',
+            'filename': safe,
+            'group': group,
+        }), 409
+
     # Stage it
     token = uuid.uuid4().hex
     staged_name = f'{token}_{safe}'
@@ -188,10 +197,6 @@ def api_upload_stage():
     original_name = file.filename
     filename_changed = (original_name != safe)
 
-    # Check name conflict in target group
-    ensure_group_dirs(group)
-    name_conflict = (Config.UPLOAD_DIR / group / safe).exists()
-
     # Generate preview thumbnail
     preview = _generate_preview(staged_path)
 
@@ -200,7 +205,6 @@ def api_upload_stage():
         'filename': safe,
         'original_name': original_name,
         'filename_changed': filename_changed,
-        'name_conflict': name_conflict,
         'group': group,
         'expires_in': Config.STAGING_TIMEOUT,
         'url': url_for('serve_upload', group=group, filename=safe),

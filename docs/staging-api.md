@@ -61,7 +61,6 @@ files: <file data>
   "filename": "my_photo.jpg",
   "original_name": "My Photo (1).jpg",
   "filename_changed": true,
-  "name_conflict": false,
   "group": "general",
   "expires_in": 300,
   "url": "/uploads/general/my_photo.jpg",
@@ -76,7 +75,6 @@ files: <file data>
 | `filename` | string | Server-side safe filename (sanitized, no path separators) |
 | `original_name` | string | Original filename from client |
 | `filename_changed` | bool | Whether `filename` differs from `original_name` (was sanitized) |
-| `name_conflict` | bool | Whether a file with the same name already exists in target group |
 | `group` | string | Target group |
 | `expires_in` | int | TTL in seconds before auto-cleanup |
 | `url` | string | Predicted final URL path (relative) |
@@ -90,17 +88,26 @@ files: <file data>
 - Supported formats: PNG, JPEG, GIF, WebP, BMP, SVG
 - Unsupported formats return `null`
 
-**Name conflict detection:**
-
-`name_conflict: true` means a file with the same name already exists in the target group. The stage still succeeds (file saved to staging area), but when the frontend sees `name_conflict: true`, it should prompt the user to rename before confirming. Confirm will overwrite the existing file silently.
-
 **Error Responses:**
 
 | Status | Meaning |
 |---|---|
 | 400 | No file, unsupported format, or invalid parameters |
+| 409 | File with same name already exists in target group |
 | 429 | Too many pending uploads (`STAGING_MAX_FILES` = 100 exceeded) |
 | 500 | File save or metadata write failure |
+
+On 409, the response includes the conflicting filename and group:
+
+```json
+{
+  "error": "File \"my_photo.jpg\" already exists in group \"general\"",
+  "filename": "my_photo.jpg",
+  "group": "general"
+}
+```
+
+The file is **not** staged — the request is rejected entirely. The frontend should inform the user and let them rename or choose a different group.
 
 **JavaScript Example:**
 
@@ -120,11 +127,6 @@ previewImg.src = data.preview;
 // Warn if filename was sanitized:
 if (data.filename_changed) {
   console.log('Filename sanitized:', data.original_name, '→', data.filename);
-}
-
-// Warn if name conflicts with existing file:
-if (data.name_conflict) {
-  console.log('File "' + data.filename + '" already exists — will overwrite on confirm');
 }
 
 // Store token for later confirm/cancel:
@@ -176,7 +178,7 @@ Content-Type: application/json
 | 404 | Token not found or expired (auto-cleaned after `expires_in` seconds) |
 | 500 | File move failure or metadata read failure |
 
-> Name conflict detection is now handled at the **stage** step. Confirm will **overwrite** the existing file silently. Check `name_conflict` in the stage response and prompt the user before confirming.
+> Name conflict detection is handled at the **stage** step. If the file already exists, stage returns 409 and the file is not uploaded. Confirm does not check for conflicts.
 
 **JavaScript Example:**
 
