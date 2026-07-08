@@ -59,30 +59,31 @@ def _get_icon():
     return _create_icon_image()
 
 
-def run_tray(port: int, *, server_stopped: threading.Event = None):
+def run_tray(get_port, *, server_stopped: threading.Event = None):
     """
     Create and run the system tray icon (blocking).
 
     Args:
-        port: server port for browser URL
+        get_port: callable that returns the current server port (int)
         server_stopped: Event to signal when the server should stop
     """
     if not HAS_TRAY:
         print("pystray not installed — tray icon disabled")
         return
 
-    shutdown_url = f'http://localhost:{port}/api/shutdown'
-    open_url = f'http://localhost:{port}'
     stop_flag = server_stopped or threading.Event()
 
+    def _port_url(path=''):
+        return f'http://localhost:{get_port()}{path}'
+
     def action_open():
-        webbrowser.open(open_url)
+        webbrowser.open(_port_url())
 
     def action_restart():
         """Send shutdown signal; the main loop in app.py will auto-restart."""
         import urllib.request
         try:
-            req = urllib.request.Request(shutdown_url, data=b'{}',
+            req = urllib.request.Request(_port_url('/api/shutdown'), data=b'{}',
                                          headers={'Content-Type': 'application/json'})
             urllib.request.urlopen(req, timeout=3)
         except Exception:
@@ -92,7 +93,7 @@ def run_tray(port: int, *, server_stopped: threading.Event = None):
         stop_flag.set()
         try:
             import urllib.request
-            req = urllib.request.Request(shutdown_url, data=b'{}',
+            req = urllib.request.Request(_port_url('/api/shutdown'), data=b'{}',
                                          headers={'Content-Type': 'application/json'})
             urllib.request.urlopen(req, timeout=1)
         except Exception:

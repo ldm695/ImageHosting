@@ -839,7 +839,7 @@ def main_tray():
     # Run tray in main thread (blocking)
     try:
         import tray
-        tray.run_tray(Config.PORT, server_stopped=server_stopped)
+        tray.run_tray(lambda: Config.PORT, server_stopped=server_stopped)
     except ImportError as e:
         print(f"Tray unavailable ({e}), falling back to console mode.")
         server_stopped.set()
