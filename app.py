@@ -705,10 +705,10 @@ def serve_thumbnail(group, filename):
 
 @app.route('/api/shutdown', methods=['POST'])
 def api_shutdown():
-    """Gracefully shut down the Flask server (used by tray/restart)"""
-    old_server = _http_server
-    if old_server is not None:
-        threading.Timer(0.5, lambda: old_server.shutdown() if old_server else None).start()
+    """Shut down the server (used by tray restart / Exit)."""
+    if _http_server is not None:
+        srv = _http_server
+        threading.Timer(0.5, lambda: srv.shutdown() if srv else None).start()
     return jsonify({'success': True})
 
 
@@ -807,7 +807,7 @@ def _serve_tray():
 
 
 def main_console():
-    """Launch in console mode. Single Ctrl+C stops the server."""
+    """Launch in console mode. Ctrl+C to stop. Restart manually after port change."""
     local_ip = get_local_ip()
     print_banner(local_ip=local_ip, port=Config.PORT)
     try:
