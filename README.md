@@ -128,7 +128,7 @@ rm -rf build ImageHosting.spec dist\ImageHosting dist\*.wxs dist\*.wixobj dist\*
 | `GET` | `/` | 主页面 |
 | `GET` | `/api/images?group=general` | 获取分组图片列表 |
 | `POST` | `/api/upload?group=general` | 上传图片（支持重命名） |
-| `POST` | `/api/upload/stage` | 暂存上传（返回 token + 预测路径） |
+| `POST` | `/api/upload/stage` | 暂存上传（返回 token + 预览 + 预测路径） |
 | `POST` | `/api/upload/confirm` | 确认暂存文件（移入正式目录） |
 | `POST` | `/api/upload/cancel` | 取消暂存（删除临时文件） |
 | `DELETE` | `/api/image/<name>?group=general` | 删除图片 |
@@ -177,7 +177,11 @@ fetch('http://192.168.8.146:6951/api/upload/stage', {
 ```bash
 # 1. 暂存
 curl -F "files=@photo.jpg" "http://localhost:6951/api/upload/stage?group=wallpapers"
-# → {"token": "abc123...", "filename": "photo.jpg", "expires_in": 300, "url": "...", "absolute_path": "..."}
+# → {"token": "abc123...", "filename": "photo.jpg", "original_name": "photo.jpg", "filename_changed": false, "expires_in": 300, "preview": "data:image/jpeg;base64,...", "url": "...", "absolute_path": "..."}
+
+# 文件名被安全化时（非 ASCII、空格、特殊字符），filename_changed 为 true：
+curl -F "files=@我的照片 (1).jpg" "http://localhost:6951/api/upload/stage"
+# → {"filename": "_.jpg", "original_name": "我的照片 (1).jpg", "filename_changed": true, ...}
 
 # 2. 确认
 curl -X POST "http://localhost:6951/api/upload/confirm" \
