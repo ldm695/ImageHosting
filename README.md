@@ -153,6 +153,39 @@ fetch('http://192.168.8.146:6951/api/upload?group=wallpapers', {
 
 不传 `group` 时默认上传到 `general` 分组。
 
+### 删除示例（CORS 已启用）
+
+```javascript
+// 单张删除
+fetch('http://192.168.8.146:6951/api/image/photo.jpg?group=general', {
+  method: 'DELETE',
+})
+.then(r => r.json())
+.then(data => console.log('删除结果:', data));
+
+// 批量删除
+fetch('http://192.168.8.146:6951/api/images/batch-delete', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    images: ['photo1.jpg', 'photo2.jpg'],
+    group: 'general',
+  }),
+})
+.then(r => r.json())
+.then(data => console.log('批量删除结果:', data));
+```
+
+```bash
+# 单张删除（curl）
+curl -X DELETE "http://localhost:6951/api/image/photo.jpg?group=general"
+
+# 批量删除（curl）
+curl -X POST "http://localhost:6951/api/images/batch-delete" \
+  -H "Content-Type: application/json" \
+  -d '{"images": ["a.jpg", "b.jpg"], "group": "general"}'
+```
+
 ## 项目结构
 
 ```
