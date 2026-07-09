@@ -852,8 +852,9 @@ def main_tray():
     except ImportError as e:
         print(f"Tray unavailable ({e}), falling back to console mode.")
         server_stopped.set()
-        # Fall back: just wait for the server thread
-        server_thread.join()
+    # Tray exited — clean up the server thread
+    server_stopped.set()
+    server_thread.join(timeout=2)
 
 
 def main():

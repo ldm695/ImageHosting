@@ -6,9 +6,7 @@ Provides a notification-area icon with:
   - Restart Server
   - Exit
 """
-import os
 import sys
-import json
 import time
 import webbrowser
 import threading
@@ -103,9 +101,7 @@ def run_tray(get_port, *, server_stopped: threading.Event = None):
             urllib.request.urlopen(req, timeout=1)
         except Exception:
             pass
-        # Force exit after a short delay
-        time.sleep(0.5)
-        os._exit(0)
+        icon.stop()
 
     menu = (
         Item("Open Browser", action_open, default=True),

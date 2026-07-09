@@ -6,7 +6,7 @@ if "%VERSION%"=="" set VERSION=1.0.3
 echo Building ImageHosting version %VERSION%
 echo.
 
-python -m PyInstaller --onedir --name ImageHosting --icon "assets\icon.ico" ^
+python -m PyInstaller --onedir --name ImageHosting --contents-directory "." --icon "assets\icon.ico" ^
   --add-data "templates;templates" --add-data "static;static" ^
   --add-data "assets\icon.ico;." --hidden-import PIL --hidden-import pystray ^
   --noconsole --clean app.py
