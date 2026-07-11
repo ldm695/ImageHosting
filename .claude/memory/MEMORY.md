@@ -1,0 +1,1 @@
+- [ImageHosting GitHub 图床同步方案](imagehosting-github-sync-plan.md) — ImageHosting 本地图床增加 GitHub 双模式同步方案，已搁置待后续实现
