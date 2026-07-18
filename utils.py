@@ -3,6 +3,7 @@ Utility functions for ImageHosting.
 
 Pure functions that depend only on Config, standard library, and Flask's url_for.
 """
+import json
 import os
 import re
 from datetime import datetime
@@ -18,6 +19,97 @@ try:
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
+
+
+# ── Tags ──────────────────────────────────────────
+
+def load_tags(group: str = Config.DEFAULT_GROUP) -> dict[str, str]:
+    """Load tag mapping from group's .tags.json (filename -> tag)."""
+    tags_file = Config.UPLOAD_DIR / group / '.tags.json'
+    if tags_file.exists():
+        try:
+            return json.loads(tags_file.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def save_tag(group: str, filename: str, tag: str):
+    """Set a tag for a specific file in a group."""
+    tags = load_tags(group)
+    tag = tag.strip()
+    if not tag:
+        return
+    tags[filename] = tag
+    _write_tags(group, tags)
+
+
+def remove_tag(group: str, filename: str):
+    """Remove a tag entry for a specific file."""
+    tags = load_tags(group)
+    tags.pop(filename, None)
+    _write_tags(group, tags)
+
+
+def rename_tag_entry(group: str, old_name: str, new_name: str):
+    """Rename a tag key when a file is renamed."""
+    tags = load_tags(group)
+    if old_name in tags:
+        tags[new_name] = tags.pop(old_name)
+        _write_tags(group, tags)
+
+
+def move_tag_entry(from_group: str, to_group: str, filename: str):
+    """Move a tag entry between groups."""
+    src_tags = load_tags(from_group)
+    if filename in src_tags:
+        dst_tags = load_tags(to_group)
+        dst_tags[filename] = src_tags.pop(filename)
+        _write_tags(from_group, src_tags)
+        _write_tags(to_group, dst_tags)
+
+
+def delete_tag_entry(group: str, filename: str):
+    """Remove a tag entry (when file is deleted). Alias for remove_tag."""
+    remove_tag(group, filename)
+
+
+def rename_tag_global(group: str, old_tag: str, new_tag: str) -> int:
+    """Rename a tag across all images in a group. Returns count of updated files."""
+    tags = load_tags(group)
+    count = 0
+    for fname, t in list(tags.items()):
+        if t == old_tag:
+            tags[fname] = new_tag
+            count += 1
+    if count:
+        _write_tags(group, tags)
+    return count
+
+
+def delete_tag_global(group: str, tag: str) -> int:
+    """Remove a tag from all images in a group. Returns count of updated files."""
+    tags = load_tags(group)
+    count = 0
+    for fname, t in list(tags.items()):
+        if t == tag:
+            del tags[fname]
+            count += 1
+    if count:
+        _write_tags(group, tags)
+    return count
+
+
+def _write_tags(group: str, tags: dict[str, str]):
+    """Persist tags to disk."""
+    tags_file = Config.UPLOAD_DIR / group / '.tags.json'
+    if tags:
+        tags_file.write_text(
+            json.dumps(tags, indent=2, ensure_ascii=False),
+            encoding='utf-8'
+        )
+    elif tags_file.exists():
+        tags_file.unlink()
 
 
 def allowed_file(filename: str) -> bool:
@@ -113,7 +205,7 @@ def generate_thumbnail(src_path: Path, dst_path: Path) -> bool:
 
 
 def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP) -> dict | None:
-    """Get single image metadata"""
+    """Get single image metadata (includes tag if set)."""
     filepath = Config.UPLOAD_DIR / group / filename
     if not filepath.exists() or not filepath.is_file():
         return None
@@ -130,8 +222,9 @@ def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP) -> dict | N
             pass
 
     created_dt = datetime.fromtimestamp(stat.st_ctime)
+    tags = load_tags(group)
 
-    return {
+    info = {
         'filename': filename,
         'group': group,
         'url': url_for('serve_upload', group=group, filename=filename),
@@ -141,22 +234,39 @@ def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP) -> dict | N
         'created': created_dt.isoformat(),
         'created_formatted': created_dt.strftime('%Y-%m-%d %H:%M'),
     }
+    if width and height:
+        info['width'] = width
+        info['height'] = height
+    if filename in tags:
+        info['tag'] = tags[filename]
+    return info
 
 
-def scan_images(group: str = Config.DEFAULT_GROUP) -> list[dict]:
-    """Scan group directory, return images sorted by newest first"""
+def scan_images(group: str = Config.DEFAULT_GROUP, tag_filter: str | None = None) -> dict:
+    """Scan group directory, return images + tag list.
+
+    Returns: {'images': [...], 'tags': [...]}
+    """
     group_dir = Config.UPLOAD_DIR / group
     if not group_dir.exists():
-        return []
+        return {'images': [], 'tags': []}
+
+    tags = load_tags(group)
+    tag_set = set(t for t in tags.values() if t)
 
     images = []
     for f in sorted(group_dir.iterdir(),
                      key=lambda p: p.stat().st_ctime, reverse=True):
         if f.is_file() and allowed_file(f.name):
+            if tag_filter and tags.get(f.name) != tag_filter:
+                continue
             info = get_image_info(f.name, group)
             if info:
                 images.append(info)
-    return images
+    return {
+        'images': images,
+        'tags': sorted(tag_set),
+    }
 
 
 def scan_groups() -> list[dict]:

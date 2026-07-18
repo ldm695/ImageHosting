@@ -3,6 +3,35 @@
 
   var AC = window.APP_CONFIG || {};
 
+  // ── Theme ────────────────────────────────────
+
+  var _themeMode = 'auto';  // auto | light | dark
+  var _systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+  function resolveTheme(mode) {
+    if (mode === 'auto') return _systemDark.matches ? 'dark' : 'light';
+    return mode;
+  }
+
+  function applyTheme(mode) {
+    _themeMode = mode;
+    document.documentElement.setAttribute('data-theme', resolveTheme(mode));
+  }
+
+  // Apply initial theme immediately — server value first, then localStorage, default auto
+  (function() {
+    var init = AC.theme;
+    if (!init) {
+      try { init = localStorage.getItem('imagehosting_theme'); } catch(e) {}
+    }
+    applyTheme(init || 'auto');
+  })();
+
+  // Listen to system preference changes (for auto mode)
+  _systemDark.addEventListener('change', function() {
+    if (_themeMode === 'auto') applyTheme('auto');
+  });
+
   // ── State ────────────────────────────────────
 
   const DEFAULT_GROUP = AC.defaultGroup || 'general';
@@ -17,6 +46,8 @@
   let allImages = [];
   let sortMode = 'name';
   let sortAsc = true;
+  let tagFilter = null;
+  let allTags = [];
 
   // ── DOM refs ─────────────────────────────────
 
@@ -38,6 +69,14 @@
   const lightboxClose = $('lightboxClose');
   const lightboxPrev = $('lightboxPrev');
   const lightboxNext = $('lightboxNext');
+  const lbTagArea = $('lbTagArea');
+  const lbTag = $('lbTag');
+  const lbTagBtn = $('lbTagBtn');
+  const lbTagEditor = $('lbTagEditor');
+  const lbTagInput = $('lbTagInput');
+  const lbTagSuggestions = $('lbTagSuggestions');
+  const lbTagSave = $('lbTagSave');
+  const lbTagClear = $('lbTagClear');
 
   const confirmDialog = $('confirmDialog');
   const confirmText = $('confirmText');
@@ -76,6 +115,27 @@
   const selectAllBtn = $('selectAllBtn');
   const batchMoveBtn = $('batchMoveBtn');
   const batchDeleteBtn = $('batchDeleteBtn');
+  const batchTagBtn = $('batchTagBtn');
+  const batchTagDialog = $('batchTagDialog');
+  const batchTagCount = $('batchTagCount');
+  const batchTagInput = $('batchTagInput');
+  const batchTagSuggestions = $('batchTagSuggestions');
+  const batchTagCancel = $('batchTagCancel');
+  const batchTagOk = $('batchTagOk');
+  const tagSelect = $('tagSelect');
+  const tagTrigger = $('tagTrigger');
+  const tagMenu = $('tagMenu');
+  const tagSelectLabel = $('tagSelectLabel');
+  const tagSelectCount = $('tagSelectCount');
+  const manageTagsBtn = $('manageTagsBtn');
+  const manageTagsDialog = $('manageTagsDialog');
+  const manageTagsList = $('manageTagsList');
+  const manageTagsClose = $('manageTagsClose');
+  const renameTagDialog = $('renameTagDialog');
+  const renameTagInput = $('renameTagInput');
+  const renameTagHint = $('renameTagHint');
+  const renameTagCancel = $('renameTagCancel');
+  const renameTagOk = $('renameTagOk');
   const uploadRenameDialog = $('uploadRenameDialog');
   const uploadFileList = $('uploadFileList');
   const uploadRenameCancel = $('uploadRenameCancel');
@@ -101,6 +161,8 @@
 
   let pendingDelete = null;
   let pendingDeleteGroup = null;
+  let pendingDeleteTag = null;
+  var _initTheme = 'auto';
   let _initDir = '';
   let _initTimeoutSec = 300;
   let _initPort = 6951;
@@ -202,6 +264,8 @@
     sortMode = 'name';
     sortAsc = true;
     sortLabel.textContent = 'Name';
+    tagFilter = null;
+    allTags = [];
     currentGroup = name;
     currentGroupLabel.textContent = name;
     closeGroupMenu();
@@ -327,10 +391,15 @@
     if (isLoading) return;
     isLoading = true;
     try {
-      const res = await fetch('/api/images?group=' + encodeURIComponent(currentGroup));
+      var url = '/api/images?group=' + encodeURIComponent(currentGroup);
+      if (tagFilter) url += '&tag=' + encodeURIComponent(tagFilter);
+      const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      allImages = await res.json();
+      const data = await res.json();
+      allImages = data.images || [];
+      allTags = data.tags || [];
       applyFilter();
+      renderTagChips();
     } catch (err) {
       snackbar('Failed to load: ' + err.message, 'error');
     } finally {
@@ -342,9 +411,13 @@
 
   function applyFilter() {
     var q = searchQuery.trim().toLowerCase();
-    var filtered = !q ? [...allImages] : allImages.filter(function(img) {
-      return img.filename.toLowerCase().includes(q);
-    });
+    var filtered = !q
+      ? [...allImages]
+      : allImages.filter(function(img) {
+          var nameMatch = img.filename.toLowerCase().includes(q);
+          var tagMatch = (img.tag || '').toLowerCase().includes(q);
+          return nameMatch || tagMatch;
+        });
     filtered.sort(function(a, b) {
       var cmp;
       if (sortMode === 'name') {
@@ -517,6 +590,188 @@
     if (!e.target.closest('.sort-select')) closeSortMenu();
   });
 
+  // ── Tag Filter (multi-select dropdown) ────────
+
+  function renderTagChips() {
+    var hasTags = allTags.length > 0;
+    tagSelect.style.display = hasTags ? '' : 'none';
+    manageTagsBtn.style.display = hasTags ? '' : 'none';
+
+    if (!hasTags) return;
+
+    tagSelectLabel.textContent = tagFilter || 'Tags';
+    tagSelectCount.textContent = allTags.length ? '(' + allTags.length + ')' : '';
+
+    var menuHTML = '';
+    if (tagFilter) {
+      menuHTML += '<div class="tag-select__item" data-tag=""><span class="tag-select__item-text">All tags</span></div>';
+      menuHTML += '<div class="tag-select__divider"></div>';
+    }
+    allTags.forEach(function(t) {
+      var active = tagFilter === t;
+      menuHTML += '\
+        <div class="tag-select__item' + (active ? ' active' : '') + '" data-tag="' + t + '">\
+          <span class="tag-radio"></span>\
+          <span class="tag-select__item-text">' + t + '</span>\
+        </div>';
+    });
+    tagMenu.innerHTML = menuHTML;
+  }
+
+  function toggleTagMenu() {
+    if (tagMenu.classList.contains('open')) closeTagMenu();
+    else openTagMenu();
+  }
+
+  function openTagMenu() {
+    renderTagChips();
+    tagMenu.classList.add('open');
+    tagTrigger.querySelector('.tag-select__arrow').classList.add('open');
+  }
+
+  function closeTagMenu() {
+    tagMenu.classList.remove('open');
+    tagTrigger.querySelector('.tag-select__arrow').classList.remove('open');
+  }
+
+  tagTrigger.addEventListener('click', toggleTagMenu);
+
+  tagMenu.addEventListener('click', function(e) {
+    var item = e.target.closest('.tag-select__item');
+    if (!item) return;
+    var t = item.dataset.tag || null;
+    tagFilter = t;
+    loadImages();
+    closeTagMenu();
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.tag-select')) closeTagMenu();
+  });
+
+  // Tag chip click on cards — set filter to that tag
+  grid.addEventListener('click', function(e) {
+    var chip = e.target.closest('.tag-chip--card');
+    if (!chip) return;
+    e.stopPropagation();
+    var t = chip.dataset.tag;
+    tagFilter = tagFilter === t ? null : t;
+    loadImages();
+  });
+
+  // ── Manage Tags ────────────────────────────────
+
+  var _renameTagPending = null;
+
+  function openManageTags() {
+    var html = '';
+    allTags.forEach(function(t) {
+      html += '\
+        <div class="manage-tag-row">\
+          <span class="material-symbols-outlined manage-tag-row__icon">sell</span>\
+          <span class="manage-tag-row__name">' + t + '</span>\
+          <span class="manage-tag-row__count" id="mtCount_' + t + '">...</span>\
+          <button class="md-btn md-btn--tag-rename" data-tag="' + t + '">Rename</button>\
+          <button class="md-btn md-btn--danger md-btn--tag-delete" data-tag="' + t + '">Delete</button>\
+        </div>';
+      // Count images with this tag
+      var count = allImages.filter(function(img) { return img.tag === t; }).length;
+      var countEl = document.getElementById('mtCount_' + t);
+      // Deferred count fill
+      setTimeout(function() {
+        var el = document.getElementById('mtCount_' + t);
+        if (el) el.textContent = count + ' image' + (count !== 1 ? 's' : '');
+      }, 10);
+    });
+    if (!html) html = '<div style="text-align:center;color:var(--md-outline);padding:16px;">No tags yet. Add tags to images via the lightbox.</div>';
+    manageTagsList.innerHTML = html;
+    manageTagsDialog.classList.add('active');
+
+    // Fill counts
+    setTimeout(function() {
+      allTags.forEach(function(t) {
+        var count = allImages.filter(function(img) { return img.tag === t; }).length;
+        var el = document.getElementById('mtCount_' + t);
+        if (el) el.textContent = count + ' image' + (count !== 1 ? 's' : '');
+      });
+    }, 50);
+  }
+
+  function closeManageTags() {
+    manageTagsDialog.classList.remove('active');
+  }
+
+  manageTagsBtn.addEventListener('click', openManageTags);
+  manageTagsClose.addEventListener('click', closeManageTags);
+  manageTagsDialog.addEventListener('click', function(e) {
+    if (e.target === manageTagsDialog) closeManageTags();
+  });
+
+  // Rename / Delete buttons in manage dialog
+  manageTagsList.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-tag]');
+    if (!btn) return;
+    var t = btn.dataset.tag;
+
+    if (btn.classList.contains('md-btn--tag-rename')) {
+      _renameTagPending = t;
+      renameTagInput.value = t;
+      renameTagHint.textContent = 'Rename tag "' + t + '" for all images in this group.';
+      renameTagDialog.classList.add('active');
+      setTimeout(function() { renameTagInput.focus(); renameTagInput.select(); }, 150);
+    }
+
+    if (btn.classList.contains('md-btn--tag-delete')) {
+      pendingDeleteTag = t;
+      confirmText.textContent = 'Delete tag "' + t + '" from all images? This cannot be undone.';
+      confirmDialog.classList.add('active');
+    }
+  });
+
+  // Rename dialog
+  renameTagCancel.addEventListener('click', function() {
+    renameTagDialog.classList.remove('active');
+    _renameTagPending = null;
+  });
+
+  renameTagDialog.addEventListener('click', function(e) {
+    if (e.target === renameTagDialog) {
+      renameTagDialog.classList.remove('active');
+      _renameTagPending = null;
+    }
+  });
+
+  renameTagOk.addEventListener('click', async function() {
+    if (!_renameTagPending) return;
+    var newTag = renameTagInput.value.trim();
+    if (!newTag) { snackbar('Please enter a tag name', 'error'); return; }
+    if (newTag === _renameTagPending) {
+      renameTagDialog.classList.remove('active');
+      _renameTagPending = null;
+      return;
+    }
+    try {
+      const res = await fetch(
+        '/api/tags/' + encodeURIComponent(_renameTagPending) + '?group=' + encodeURIComponent(currentGroup),
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_tag: newTag }) }
+      );
+      const data = await res.json();
+      if (data.error) { snackbar(data.error, 'error'); return; }
+      snackbar('Renamed "' + data.old_tag + '" to "' + data.new_tag + '" (' + data.updated + ' image(s))', 'success');
+      renameTagDialog.classList.remove('active');
+      _renameTagPending = null;
+      // Update active filter if it was the renamed tag
+      if (tagFilter === data.old_tag) tagFilter = data.new_tag;
+      loadImages();
+      closeManageTags();
+    } catch (err) { snackbar('Rename failed: ' + err.message, 'error'); }
+  });
+
+  renameTagInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') renameTagOk.click();
+    if (e.key === 'Escape') { renameTagDialog.classList.remove('active'); _renameTagPending = null; }
+  });
+
   // ── Render Grid ───────────────────────────────
 
   function renderGrid() {
@@ -544,6 +799,10 @@
         : img.formatted_size;
 
       card.dataset.index = index;
+      var tagBadge = img.tag
+        ? '<span class="tag-chip tag-chip--card" data-tag="' + img.tag + '">' + img.tag + '</span>'
+        : '';
+
       card.innerHTML = '\
         <div class="md-card__check" data-check="' + index + '">\
           <span class="material-symbols-outlined">check</span>\
@@ -557,6 +816,7 @@
             <span>' + sizeLabel + '</span>\
             <span>' + img.created_formatted + '</span>\
           </div>\
+          ' + tagBadge + '\
         </div>\
         <div class="md-card__actions">\
           <button class="md-icon-btn" data-action="copy" data-index="' + index + '" title="Copy link">\
@@ -755,6 +1015,7 @@
     lightbox.classList.add('active');
     document.body.style.overflow = 'hidden';
     updateNavButtons();
+    updateLbTag();
   }
 
   function closeLightbox() {
@@ -792,6 +1053,115 @@
 
   lbDelete.addEventListener('click', function() {
     if (currentIndex >= 0) promptDelete(currentIndex);
+  });
+
+  // ── Lightbox Tag ──────────────────────────────
+
+  function updateLbTag() {
+    var img = images[currentIndex];
+    if (!img) return;
+    if (img.tag) {
+      lbTag.textContent = img.tag;
+      lbTag.style.display = '';
+      lbTagBtn.title = 'Change tag';
+    } else {
+      lbTag.textContent = '';
+      lbTag.style.display = 'none';
+      lbTagBtn.title = 'Add tag';
+    }
+    lbTagEditor.style.display = 'none';
+  }
+
+  lbTagBtn.addEventListener('click', function() {
+    if (currentIndex < 0) return;
+    var img = images[currentIndex];
+    lbTagInput.value = img.tag || '';
+    lbTagEditor.style.display = '';
+
+    // Build suggestion list from existing tags
+    var html = '';
+    allTags.forEach(function(t) {
+      html += '<div class="tag-suggestion' + (t === img.tag ? ' active' : '') + '" data-tag="' + t + '">' + t + '</div>';
+    });
+    lbTagSuggestions.innerHTML = html;
+    if (html) lbTagSuggestions.style.display = '';
+    else lbTagSuggestions.style.display = 'none';
+
+    setTimeout(function() { lbTagInput.focus(); lbTagInput.select(); }, 100);
+  });
+
+  lbTagInput.addEventListener('input', function() {
+    var val = lbTagInput.value.trim().toLowerCase();
+    var items = lbTagSuggestions.querySelectorAll('.tag-suggestion');
+    items.forEach(function(el) {
+      var match = !val || el.dataset.tag.toLowerCase().includes(val);
+      el.style.display = match ? '' : 'none';
+    });
+  });
+
+  lbTagSuggestions.addEventListener('click', function(e) {
+    var el = e.target.closest('.tag-suggestion');
+    if (!el) return;
+    lbTagInput.value = el.dataset.tag;
+    lbTagSuggestions.style.display = 'none';
+    lbTagInput.focus();
+  });
+
+  lbTagSave.addEventListener('click', async function() {
+    if (currentIndex < 0) return;
+    var img = images[currentIndex];
+    var tag = lbTagInput.value.trim();
+    if (!tag) return;
+
+    try {
+      const res = await fetch(
+        '/api/image/' + encodeURIComponent(img.filename) + '/tag?group=' + encodeURIComponent(currentGroup),
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tag: tag }) }
+      );
+      const data = await res.json();
+      if (data.error) { snackbar('Tag failed: ' + data.error, 'error'); return; }
+      snackbar('Tag set to "' + data.tag + '"', 'success');
+      lbTagEditor.style.display = 'none';
+      if (data.info) {
+        images[currentIndex] = data.info;
+        updateLbTag();
+      }
+      await loadImages();
+    } catch (err) { snackbar('Tag failed: ' + err.message, 'error'); }
+  });
+
+  lbTagClear.addEventListener('click', async function() {
+    if (currentIndex < 0) return;
+    var img = images[currentIndex];
+    try {
+      const res = await fetch(
+        '/api/image/' + encodeURIComponent(img.filename) + '/tag?group=' + encodeURIComponent(currentGroup),
+        { method: 'DELETE' }
+      );
+      const data = await res.json();
+      if (data.error) { snackbar('Clear tag failed: ' + data.error, 'error'); return; }
+      snackbar('Tag removed', 'success');
+      lbTagEditor.style.display = 'none';
+      if (data.info) {
+        images[currentIndex] = data.info;
+        updateLbTag();
+      }
+      await loadImages();
+    } catch (err) { snackbar('Clear tag failed: ' + err.message, 'error'); }
+  });
+
+  lbTagInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') lbTagSave.click();
+    if (e.key === 'Escape') { lbTagEditor.style.display = 'none'; }
+  });
+
+  // Close tag editor when clicking outside
+  document.addEventListener('click', function(e) {
+    if (lbTagEditor.style.display !== 'none' &&
+        !e.target.closest('.lightbox__tag-editor') &&
+        !e.target.closest('.md-icon-btn--tag')) {
+      lbTagEditor.style.display = 'none';
+    }
   });
 
   // ── Rename ─────────────────────────────────────
@@ -1035,6 +1405,7 @@
     var count = selectedSet.size;
     selectCount.textContent = count + ' selected';
     batchMoveBtn.style.display = count > 0 ? '' : 'none';
+    batchTagBtn.style.display = count > 0 ? '' : 'none';
     batchDeleteBtn.style.display = count > 0 ? '' : 'none';
   }
 
@@ -1056,6 +1427,80 @@
     confirmText.textContent = 'Delete ' + names.length + ' selected image(s)? This cannot be undone.';
     pendingDelete = 'batch';
     confirmDialog.classList.add('active');
+  });
+
+  // ── Batch Tag ─────────────────────────────────
+
+  batchTagBtn.addEventListener('click', function() {
+    if (selectedSet.size === 0) return;
+    var count = selectedSet.size;
+    batchTagCount.textContent = 'Set a tag for ' + count + ' selected image(s):';
+    batchTagInput.value = '';
+
+    // Build suggestion chips from existing tags
+    var html = '';
+    allTags.forEach(function(t) {
+      html += '<span class="tag-chip tag-suggestion-chip" data-tag="' + t + '">' + t + '</span>';
+    });
+    batchTagSuggestions.innerHTML = html;
+
+    batchTagDialog.classList.add('active');
+    setTimeout(function() { batchTagInput.focus(); }, 150);
+  });
+
+  batchTagCancel.addEventListener('click', function() {
+    batchTagDialog.classList.remove('active');
+  });
+
+  batchTagDialog.addEventListener('click', function(e) {
+    if (e.target === batchTagDialog) batchTagDialog.classList.remove('active');
+  });
+
+  // Click suggestion chip to fill input
+  batchTagSuggestions.addEventListener('click', function(e) {
+    var chip = e.target.closest('.tag-suggestion-chip');
+    if (!chip) return;
+    batchTagInput.value = chip.dataset.tag;
+    batchTagInput.focus();
+  });
+
+  batchTagOk.addEventListener('click', async function() {
+    var tag = batchTagInput.value.trim();
+    if (!tag) { snackbar('Please enter a tag', 'error'); return; }
+
+    var names = [...selectedSet].map(function(i) { return images[i].filename; });
+
+    batchTagOk.disabled = true;
+    batchTagOk.textContent = 'Applying…';
+
+    try {
+      const res = await fetch('/api/images/batch-tag', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group: currentGroup, files: names, tag: tag }),
+      });
+      const data = await res.json();
+      if (data.error) { snackbar(data.error, 'error'); return; }
+      if (data.tagged && data.tagged.length > 0) {
+        snackbar('Tag "' + tag + '" applied to ' + data.tagged.length + ' image(s)', 'success');
+      }
+      if (data.errors && data.errors.length > 0) {
+        data.errors.forEach(function(e) { snackbar(e.filename + ': ' + e.error, 'error'); });
+      }
+      batchTagDialog.classList.remove('active');
+      exitSelectMode();
+      loadImages();
+    } catch (err) {
+      snackbar('Batch tag failed: ' + err.message, 'error');
+    } finally {
+      batchTagOk.disabled = false;
+      batchTagOk.textContent = 'Apply Tag';
+    }
+  });
+
+  batchTagInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') batchTagOk.click();
+    if (e.key === 'Escape') batchTagDialog.classList.remove('active');
   });
 
   batchMoveBtn.addEventListener('click', function() {
@@ -1134,7 +1579,7 @@
   confirmCancel.addEventListener('click', function() {
     confirmDialog.classList.remove('active');
     pendingDelete = null;
-    pendingDeleteGroup = null;
+    pendingDeleteGroup = null; pendingDeleteTag = null;
   });
 
   confirmOk.addEventListener('click', async function() {
@@ -1189,8 +1634,21 @@
     } else if (pendingDeleteGroup !== null) {
       var name = pendingDeleteGroup;
       confirmDialog.classList.remove('active');
-      pendingDeleteGroup = null;
+      pendingDeleteGroup = null; pendingDeleteTag = null;
       await deleteGroup(name);
+    } else if (pendingDeleteTag !== null) {
+      var t = pendingDeleteTag;
+      confirmDialog.classList.remove('active');
+      pendingDeleteTag = null;
+      try {
+        const res = await fetch('/api/tags/' + encodeURIComponent(t) + '?group=' + encodeURIComponent(currentGroup), { method: 'DELETE' });
+        const data = await res.json();
+        if (data.error) { snackbar(data.error, 'error'); return; }
+        snackbar('Tag "' + t + '" removed from ' + data.removed + ' image(s)', 'success');
+        closeManageTags();
+        if (tagFilter === t) tagFilter = null;
+        loadImages();
+      } catch (err) { snackbar('Failed: ' + err.message, 'error'); }
     }
   });
 
@@ -1198,7 +1656,7 @@
     if (e.target === confirmDialog) {
       confirmDialog.classList.remove('active');
       pendingDelete = null;
-      pendingDeleteGroup = null;
+      pendingDeleteGroup = null; pendingDeleteTag = null;
     }
   });
 
@@ -1208,7 +1666,7 @@
     if (e.key === 'Escape' && confirmDialog.classList.contains('active')) {
       confirmDialog.classList.remove('active');
       pendingDelete = null;
-      pendingDeleteGroup = null;
+      pendingDeleteGroup = null; pendingDeleteTag = null;
     }
     if (e.key === 'Escape' && createGroupDialog.classList.contains('active')) {
       closeCreateGroupDialog();
@@ -1224,16 +1682,20 @@
       settingsDataDir.value = data.data_dir || '';
       settingsTimeout.value = (data.staging_timeout / 60) || 5;
       settingsPort.value = data.port || 6951;
+      _initTheme = data.theme || 'auto';
       _initDir = data.data_dir || '';
       _initTimeoutSec = data.staging_timeout || 300;
       _initPort = data.port || 6951;
+      setThemeRadio(_initTheme);
     } catch (_e) {
       settingsDataDir.value = AC.dataDir || '';
       settingsTimeout.value = 5;
       settingsPort.value = 6951;
+      _initTheme = _themeMode;
       _initDir = AC.dataDir || '';
       _initTimeoutSec = 300;
       _initPort = 6951;
+      setThemeRadio(_initTheme);
     }
     settingsDialog.classList.add('active');
     setTimeout(function() { settingsDataDir.focus(); }, 150);
@@ -1243,6 +1705,39 @@
     settingsDialog.classList.remove('active');
     settingsError.style.display = 'none';
   }
+
+  function setThemeRadio(value) {
+    var radios = document.getElementsByName('theme');
+    for (var i = 0; i < radios.length; i++) {
+      radios[i].checked = radios[i].value === value;
+    }
+  }
+
+  function getThemeRadio() {
+    var radios = document.getElementsByName('theme');
+    for (var i = 0; i < radios.length; i++) {
+      if (radios[i].checked) return radios[i].value;
+    }
+    return 'auto';
+  }
+
+  // Theme radio: save instantly on change (no need to click Save)
+  document.getElementById('themeRadioGroup').addEventListener('change', async function() {
+    var theme = getThemeRadio();
+    applyTheme(theme);
+    localStorage.setItem('imagehosting_theme', theme);
+    _initTheme = theme;
+    try {
+      await fetch('/api/settings/theme', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: theme }),
+      });
+      snackbar('Theme: ' + theme, 'success');
+    } catch (err) {
+      snackbar('Theme save failed: ' + err.message, 'error');
+    }
+  });
 
   function showSettingsError(msg) {
     settingsError.textContent = msg;

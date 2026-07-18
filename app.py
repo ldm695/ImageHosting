@@ -64,6 +64,8 @@ if 'staging_timeout' in _persisted:
     Config.STAGING_TIMEOUT = int(_persisted['staging_timeout'])
 if 'port' in _persisted and not any(a.startswith('--port') for a in sys.argv[1:]):
     Config.PORT = int(_persisted['port'])
+if 'theme' in _persisted:
+    Config.THEME = _persisted['theme']
 
 # Ensure root dirs exist
 Config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -105,6 +107,7 @@ def index():
         max_size_mb=Config.MAX_CONTENT_LENGTH // (1024 * 1024),
         default_group=Config.DEFAULT_GROUP,
         data_dir=str(Config.DATA_DIR),
+        theme=getattr(Config, 'THEME', 'auto'),
     )
 
 
@@ -117,6 +120,7 @@ def api_get_settings():
         'data_dir': str(Config.DATA_DIR),
         'port': Config.PORT,
         'staging_timeout': Config.STAGING_TIMEOUT,
+        'theme': getattr(Config, 'THEME', 'auto'),
     })
 
 
@@ -289,6 +293,21 @@ def api_update_port():
     except (ValueError, TypeError):
         return jsonify({'error': 'Invalid port value'}), 400
 
+
+@app.route('/api/settings/theme', methods=['PUT'])
+def api_update_theme():
+    """Update theme preference (auto / light / dark)."""
+    data = request.get_json(silent=True) or {}
+    theme = (data.get('theme', '') or '').strip().lower()
+
+    if theme not in ('auto', 'light', 'dark'):
+        return jsonify({'error': 'Theme must be auto, light, or dark'}), 400
+
+    Config.THEME = theme
+    save_settings({'theme': theme})
+    return jsonify({'success': True, 'theme': theme})
+
+
 # ── Group API ────────────────────────────────────
 
 @app.route('/api/groups', methods=['GET'])
@@ -378,9 +397,10 @@ def api_rename_group(name):
 
 @app.route('/api/images')
 def api_images():
-    """Get images for a specific group"""
+    """Get images for a specific group, optional tag filter"""
     group = request.args.get('group', Config.DEFAULT_GROUP)
-    return jsonify(scan_images(group))
+    tag_filter = request.args.get('tag', '').strip() or None
+    return jsonify(scan_images(group, tag_filter=tag_filter))
 
 
 @app.route('/api/upload', methods=['POST'])
@@ -486,6 +506,9 @@ def api_delete_image(filename):
     except Exception as e:
         return jsonify({'error': f'Delete failed: {str(e)}'}), 500
 
+    # Remove tag entry
+    delete_tag_entry(group, safe)
+
     thumbpath = Config.THUMBNAIL_DIR / group / safe
     if thumbpath.exists():
         try:
@@ -533,6 +556,9 @@ def api_rename_image(filename):
     except Exception as e:
         return jsonify({'error': f'Rename failed: {str(e)}'}), 500
 
+    # Sync tag entry
+    rename_tag_entry(group, safe_old, safe_new)
+
     # Rename thumbnail if it exists
     old_thumb = Config.THUMBNAIL_DIR / group / safe_old
     new_thumb = Config.THUMBNAIL_DIR / group / safe_new
@@ -544,6 +570,80 @@ def api_rename_image(filename):
 
     info = get_image_info(safe_new, group)
     return jsonify({'success': True, 'filename': safe_new, 'info': info})
+
+
+@app.route('/api/image/<filename>/tag', methods=['PUT'])
+def api_set_tag(filename):
+    """Set or update the tag for an image."""
+    group = request.args.get('group', Config.DEFAULT_GROUP)
+    data = request.get_json(silent=True) or {}
+    tag = (data.get('tag', '') or '').strip()
+
+    safe = secure_filename(filename)
+    if not safe:
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    filepath = Config.UPLOAD_DIR / group / safe
+    if not filepath.exists():
+        return jsonify({'error': 'File not found'}), 404
+
+    if not tag:
+        return jsonify({'error': 'Tag cannot be empty'}), 400
+    if len(tag) > 64:
+        return jsonify({'error': 'Tag must be 64 characters or fewer'}), 400
+    # Only allow letters, numbers, spaces, hyphens, underscores
+    if not re.match(r'^[\w\s\-]+$', tag):
+        return jsonify({'error': 'Tag can only contain letters, numbers, spaces, hyphens, and underscores'}), 400
+
+    save_tag(group, safe, tag)
+    info = get_image_info(safe, group)
+    return jsonify({'success': True, 'tag': tag, 'info': info})
+
+
+@app.route('/api/image/<filename>/tag', methods=['DELETE'])
+def api_remove_tag(filename):
+    """Remove the tag from an image."""
+    group = request.args.get('group', Config.DEFAULT_GROUP)
+
+    safe = secure_filename(filename)
+    if not safe:
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    filepath = Config.UPLOAD_DIR / group / safe
+    if not filepath.exists():
+        return jsonify({'error': 'File not found'}), 404
+
+    remove_tag(group, safe)
+    info = get_image_info(safe, group)
+    return jsonify({'success': True, 'info': info})
+
+
+@app.route('/api/tags/<tag>', methods=['PUT'])
+def api_rename_tag_global(tag):
+    """Rename a tag globally across all images in a group."""
+    group = request.args.get('group', Config.DEFAULT_GROUP)
+    data = request.get_json(silent=True) or {}
+    new_tag = (data.get('new_tag', '') or '').strip()
+
+    if not new_tag:
+        return jsonify({'error': 'New tag name is required'}), 400
+    if len(new_tag) > 64:
+        return jsonify({'error': 'Tag must be 64 characters or fewer'}), 400
+    if not re.match(r'^[\w\s\-]+$', new_tag):
+        return jsonify({'error': 'Tag can only contain letters, numbers, spaces, hyphens, and underscores'}), 400
+    if new_tag == tag:
+        return jsonify({'error': 'New tag is the same as the old one'}), 400
+
+    count = rename_tag_global(group, tag, new_tag)
+    return jsonify({'success': True, 'old_tag': tag, 'new_tag': new_tag, 'updated': count})
+
+
+@app.route('/api/tags/<tag>', methods=['DELETE'])
+def api_delete_tag_global(tag):
+    """Remove a tag from all images in a group."""
+    group = request.args.get('group', Config.DEFAULT_GROUP)
+    count = delete_tag_global(group, tag)
+    return jsonify({'success': True, 'tag': tag, 'removed': count})
 
 
 @app.route('/api/image/<filename>/move', methods=['PUT'])
@@ -589,6 +689,9 @@ def api_move_image(filename):
         except Exception:
             pass
 
+    # Sync tag entry
+    move_tag_entry(from_group, to_group, safe_file)
+
     info = get_image_info(safe_file, to_group)
     return jsonify({'success': True, 'filename': safe_file, 'group': to_group, 'info': info})
 
@@ -623,6 +726,7 @@ def api_batch_delete():
             thumbpath = Config.THUMBNAIL_DIR / group / safe
             if thumbpath.exists():
                 thumbpath.unlink()
+            delete_tag_entry(group, safe)
             results['deleted'].append(filename)
         except Exception as e:
             results['errors'].append({'filename': filename, 'error': str(e)})
@@ -671,11 +775,51 @@ def api_batch_move():
             dst_thumb = Config.THUMBNAIL_DIR / to_group / safe
             if src_thumb.exists():
                 src_thumb.rename(dst_thumb)
+            move_tag_entry(group, to_group, safe)
             results['moved'].append(filename)
         except Exception as e:
             results['errors'].append({'filename': filename, 'error': str(e)})
 
     return jsonify({'success': True, **results})
+
+
+@app.route('/api/images/batch-tag', methods=['POST'])
+def api_batch_tag():
+    """Set the same tag for multiple images at once."""
+    data = request.get_json(silent=True) or {}
+    group = data.get('group', Config.DEFAULT_GROUP)
+    tag = (data.get('tag', '') or '').strip()
+    files = data.get('files', [])
+
+    if not files or not isinstance(files, list):
+        return jsonify({'error': 'File list is required'}), 400
+    if not tag:
+        return jsonify({'error': 'Tag cannot be empty'}), 400
+    if len(tag) > 64:
+        return jsonify({'error': 'Tag must be 64 characters or fewer'}), 400
+    if not re.match(r'^[\w\s\-]+$', tag):
+        return jsonify({'error': 'Tag can only contain letters, numbers, spaces, hyphens, and underscores'}), 400
+
+    results = {'tagged': [], 'errors': []}
+
+    for filename in files:
+        safe = secure_filename(filename)
+        if not safe:
+            results['errors'].append({'filename': filename, 'error': 'Invalid filename'})
+            continue
+
+        filepath = Config.UPLOAD_DIR / group / safe
+        if not filepath.exists():
+            results['errors'].append({'filename': filename, 'error': 'Not found'})
+            continue
+
+        try:
+            save_tag(group, safe, tag)
+            results['tagged'].append(filename)
+        except Exception as e:
+            results['errors'].append({'filename': filename, 'error': str(e)})
+
+    return jsonify({'success': True, 'tag': tag, **results})
 
 
 # ── Static File Routes ──────────────────────────
@@ -738,6 +882,7 @@ def page_not_found(e):
         max_size_mb=Config.MAX_CONTENT_LENGTH // (1024 * 1024),
         default_group=Config.DEFAULT_GROUP,
         data_dir=str(Config.DATA_DIR),
+        theme=getattr(Config, 'THEME', 'auto'),
     ), 404
 
 

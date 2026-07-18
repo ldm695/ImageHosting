@@ -47,6 +47,9 @@ class Config:
     # ── Groups ─────────────────────────────────────
     DEFAULT_GROUP = 'general'
 
+    # ── Theme ───────────────────────────────────────
+    THEME = 'auto'              # auto | light | dark
+
     # ── Page ───────────────────────────────────────
     SITE_TITLE = 'ImageHosting'
     IMAGES_PER_PAGE = 48

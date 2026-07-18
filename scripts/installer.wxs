@@ -18,6 +18,15 @@
     <Icon Id="appIcon" SourceFile="dist\ImageHosting\icon.ico" />
     <Property Id="ARPPRODUCTICON" Value="appIcon" />
 
+    <!-- Detect previous install path from registry -->
+    <Property Id="INSTALLDIR" Secure="yes">
+      <RegistrySearch Id="FindInstallDir"
+                      Root="HKLM"
+                      Key="Software\ImageHosting"
+                      Name="InstallPath"
+                      Type="raw" />
+    </Property>
+
     <UIRef Id="WixUI_InstallDir" />
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
 
@@ -49,6 +58,10 @@
         <RemoveFolder Id="RemoveStartMenuDir" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\ImageHosting"
                        Name="installed" Type="integer" Value="1" />
+        <RegistryValue Root="HKLM" Key="Software\ImageHosting"
+                       Name="InstallPath" Type="string" Value="[INSTALLDIR]" />
+        <RegistryValue Root="HKLM" Key="Software\ImageHosting"
+                       Name="Version" Type="string" Value="$(var.Version)" />
       </Component>
     </DirectoryRef>
 
