@@ -1,0 +1,289 @@
+/* ═══════════════════════════════════════════════════════════
+   ImageHosting — Lightbox, buttons, lightbox nav, confirm dialog
+   (Split from style.css; @import'd there. Order preserved for cascade.)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Lightbox (Dialog — MD3 Full-screen) ───────── */
+
+.lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  align-items: center;
+  justify-content: center;
+  animation: lightboxIn 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes lightboxIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.lightbox.active { display: flex; }
+
+.lightbox__body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 92vw;
+  max-height: 92vh;
+}
+
+.lightbox__img {
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: var(--md-shape-sm);
+  box-shadow: var(--md-elevation-5);
+}
+
+/* Bottom bar — MD3 style */
+.lightbox__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 20px;
+  background: var(--md-surface-container);
+  border-radius: var(--md-shape-lg);
+  border: 1px solid var(--md-outline-variant);
+  flex-wrap: wrap;
+  justify-content: center;
+  min-width: 0;
+  max-width: 100%;
+  position: relative;
+}
+
+.lightbox__filename {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--md-on-surface);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+
+.lightbox__meta {
+  font-size: 0.78rem;
+  color: var(--md-on-surface-variant);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.lightbox__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lightbox__separator {
+  width: 1px;
+  height: 24px;
+  background: var(--md-outline-variant);
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* ── Buttons (MD3) ─────────────────────────────── */
+
+.md-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-shape-lg);
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  font-size: 0.82rem;
+  font-weight: 500;
+  font-family: var(--md-font);
+  cursor: pointer;
+  transition: all var(--md-motion-standard);
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.md-btn:hover {
+  background: rgba(208, 188, 255, 0.06);
+  border-color: var(--md-outline);
+}
+
+.md-btn:active {
+  transform: scale(0.96);
+}
+
+.md-btn--filled {
+  background: var(--md-primary);
+  border-color: var(--md-primary);
+  color: var(--md-on-primary);
+}
+
+.md-btn--filled:hover {
+  background: var(--md-primary-container);
+  border-color: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
+.md-btn--danger {
+  color: var(--md-error);
+  border-color: rgba(242, 184, 181, 0.3);
+}
+
+.md-btn--danger:hover {
+  background: rgba(242, 184, 181, 0.08);
+  border-color: var(--md-error);
+}
+
+.md-btn__icon {
+  font-size: 1.1rem;
+}
+
+/* ── Lightbox Nav ──────────────────────────────── */
+
+.lightbox__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: var(--md-shape-full);
+  background: rgba(28, 27, 31, 0.7);
+  color: #fff;
+  font-size: 1.3rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all var(--md-motion-standard);
+}
+
+.lightbox__nav:hover {
+  background: rgba(28, 27, 31, 0.9);
+  transform: translateY(-50%) scale(1.08);
+}
+
+.lightbox__nav:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
+.lightbox__nav--prev { left: -64px; }
+.lightbox__nav--next { right: -64px; }
+
+.lightbox__nav .material-symbols-outlined {
+  font-size: 1.6rem;
+}
+
+.lightbox__close {
+  position: fixed;
+  top: 16px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--md-shape-full);
+  background: rgba(28, 27, 31, 0.6);
+  color: #fff;
+  font-size: 1.3rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all var(--md-motion-standard);
+  z-index: 9999;
+}
+
+.lightbox__close:hover {
+  background: rgba(28, 27, 31, 0.85);
+  transform: scale(1.08);
+}
+
+.lightbox__close .material-symbols-outlined {
+  font-size: 1.4rem;
+}
+
+/* ── Confirm Dialog (MD3 Alert Dialog) ─────────── */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: overlayIn 0.2s ease;
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.dialog-overlay.active { display: flex; }
+
+.dialog {
+  background: var(--md-surface-container-highest);
+  border-radius: var(--md-shape-xl);
+  padding: 24px 28px 20px;
+  max-width: 360px;
+  width: 88%;
+  box-shadow: var(--md-elevation-5);
+  animation: dialogIn 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.dialog--wide {
+  max-width: 520px;
+}
+
+@keyframes dialogIn {
+  from { opacity: 0; transform: scale(0.92) translateY(16px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.dialog__title {
+  font-size: 1.15rem;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: var(--md-on-surface);
+}
+
+.dialog__content {
+  font-size: 0.88rem;
+  color: var(--md-on-surface-variant);
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.dialog__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.dialog__actions .md-btn {
+  height: 40px;
+  padding: 0 20px;
+  border-radius: var(--md-shape-lg);
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Selection mode card states (no responsive overrides needed)
+   ═══════════════════════════════════════════════════════════ */

@@ -5,8 +5,8 @@ The mushroom SVG is pixel-art made of <path> elements using only M/h/v/z command
 Each path is a rectangle: M{x} {y} h{w} v{h} h{-w} z
 
 Step 1: Compute content bounding box → find center → crop viewport to 1:1 square
-Step 2: Render square viewport with 10% padding (prevents edge clipping at 16×16)
-Step 3: Resize to target sizes (NEAREST for ≤48px pixel art, LANCZOS for 256px)
+Step 2: Render square viewport (no padding — content fills canvas)
+Step 3: NEAREST resize to all target sizes (preserves pixel-art sharpness)
 
 CRITICAL: The path extraction regex MUST use [^>]* to allow any attributes between
 d and fill. Always verify: 120 path elements, 181 sub-paths, ~841k pixels.
@@ -17,7 +17,7 @@ Usage:
 
 import re
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 SVG_PATH = ROOT / 'assets' / 'icon.svg'
@@ -26,9 +26,9 @@ ICO_PATH = ROOT / 'assets' / 'icon.ico'
 FAVICON_SVG = ROOT / 'static' / 'favicon.svg'
 FAVICON_ICO = ROOT / 'static' / 'favicon.ico'
 
-PADDING = 0.00          # content fills square (no margin needed with NEAREST scaling)
+PADDING = 0.00          # content fills square
 RENDER_SIZE = 1024      # output square px
-ICO_SIZES = [(16, 16), (32, 32), (48, 48), (256, 256)]
+ICO_SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (96, 96), (128, 128), (256, 256)]
 
 
 def parse_subpaths(content: str) -> list[tuple[float, float, float, float, str]]:
@@ -74,6 +74,7 @@ def render():
 
     # ── Step 2: Render into square canvas ──────────────
     img = Image.new('RGBA', (RENDER_SIZE, RENDER_SIZE), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
 
     pixels = 0
     for x, y, w, h, fill in rects:
@@ -90,25 +91,25 @@ def render():
         x2 = max(0, min(x2, RENDER_SIZE))
         y2 = max(0, min(y2, RENDER_SIZE))
 
-        for px in range(x1, x2):
-            for py in range(y1, y2):
-                img.putpixel((px, py), (r, g, b, 255))
-                pixels += 1
+        # rectangle() fills inclusive of both corners, so use x2-1/y2-1 to match
+        # the half-open [x1, x2) × [y1, y2) span of the old per-pixel loop.
+        if x2 > x1 and y2 > y1:
+            draw.rectangle([x1, y1, x2 - 1, y2 - 1], fill=(r, g, b, 255))
+            pixels += (x2 - x1) * (y2 - y1)
 
     # Pixel count varies with viewport size; verify it's in a reasonable range
     assert 400_000 <= pixels <= 900_000, f'Unexpected pixel count: {pixels}'
     print(f'  Rendered {pixels} pixels → {RENDER_SIZE}×{RENDER_SIZE} square')
 
     # ── Step 3: Save ────────────────────────────────────
-    img_256 = img.resize((256, 256), Image.LANCZOS)
+    img_256 = img.resize((256, 256), Image.NEAREST)
     img_256.save(PNG_PATH)
     print(f'  Saved {PNG_PATH.name} (256×256)')
 
-    icon_frames = []
-    for s in ICO_SIZES:
-        method = Image.NEAREST if s[0] <= 48 else Image.LANCZOS
-        icon_frames.append(img.resize(s, method))
-    icon_frames[0].save(ICO_PATH, format='ICO', sizes=ICO_SIZES, append_images=icon_frames[1:])
+    icon_frames = [img.resize(s, Image.NEAREST) for s in ICO_SIZES]
+
+    # Assemble ICO manually — Pillow's ICO save doesn't reliably save all frames
+    _save_ico(ICO_PATH, icon_frames)
     print(f'  Saved {ICO_PATH.name} ({", ".join(f"{w}×{h}" for w, h in ICO_SIZES)})')
 
     # ── Copy to static/ ─────────────────────────────────
@@ -116,6 +117,91 @@ def render():
     shutil.copy2(SVG_PATH, FAVICON_SVG)
     shutil.copy2(ICO_PATH, FAVICON_ICO)
     print(f'  Copied to {FAVICON_SVG.name}, {FAVICON_ICO.name}')
+
+
+def _save_ico(path, frames):
+    """Save a list of RGBA Pillow Images as a multi-size ICO file."""
+    import struct
+    count = len(frames)
+
+    # Encode each frame as BMP + 1-bit AND mask
+    raw_frames = []
+    for img in frames:
+        w, h = img.size
+        # Ensure RGBA
+        if img.mode != 'RGBA':
+            img = img.convert('RGBA')
+        pixels = img.tobytes()
+
+        # XOR mask: bottom-up BGRA rows
+        xor_rows = []
+        for y in range(h - 1, -1, -1):
+            row_start = y * w * 4
+            row = bytearray()
+            for x in range(w):
+                r, g, b, a = pixels[row_start + x * 4:row_start + x * 4 + 4]
+                row.extend([b, g, r, a])
+            # Pad to 4-byte boundary
+            while len(row) % 4:
+                row.append(0)
+            xor_rows.append(bytes(row))
+        xor_data = b''.join(xor_rows)
+
+        # AND mask (1-bit, bottom-up, padded to 4-byte rows)
+        and_rows = []
+        for y in range(h - 1, -1, -1):
+            row_bits = []
+            for x in range(w):
+                a = pixels[y * w * 4 + x * 4 + 3]
+                row_bits.append(0 if a > 127 else 1)
+            # Pack bits into bytes
+            row_bytes = bytearray()
+            for i in range(0, len(row_bits), 8):
+                byte = 0
+                for j in range(8):
+                    if i + j < len(row_bits):
+                        byte |= row_bits[i + j] << (7 - j)
+                row_bytes.append(byte)
+            while len(row_bytes) % 4:
+                row_bytes.append(0)
+            and_rows.append(bytes(row_bytes))
+        and_data = b''.join(and_rows)
+
+        # BITMAPINFOHEADER (40 bytes)
+        bmp_size = 40 + len(xor_data) + len(and_data)
+        bih = struct.pack('<IiiHHIIiiII',
+            40,          # biSize
+            w, h * 2,   # biWidth, biHeight (doubled for XOR+AND)
+            1,           # biPlanes
+            32,          # biBitCount
+            0,           # biCompression (BI_RGB)
+            len(xor_data) + len(and_data),
+            0, 0, 0, 0  # unused
+        )
+        raw_frames.append(bih + xor_data + and_data)
+
+    # Build ICO
+    header = struct.pack('<HHH', 0, 1, count)  # reserved, type=ICO, count
+    entries = b''
+    image_data = b''
+    data_offset = 6 + count * 16
+
+    for i, (img, data) in enumerate(zip(frames, raw_frames)):
+        w, h = img.size
+        w_byte = w if w < 256 else 0
+        h_byte = h if h < 256 else 0
+        entries += struct.pack('<BBBBHHII',
+            w_byte, h_byte,
+            0,          # color palette count
+            0,          # reserved
+            1,          # color planes
+            32,         # bits per pixel
+            len(data),
+            data_offset
+        )
+        data_offset += len(data)
+
+    path.write_bytes(header + entries + b''.join(raw_frames))
 
 
 if __name__ == '__main__':

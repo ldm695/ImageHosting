@@ -5,8 +5,8 @@ Single-user LAN image hosting with Groups / Upload / Browse / Delete / Copy link
 """
 import os
 import sys
-import re
 import json
+import time
 import shutil
 import argparse
 import threading
@@ -17,14 +17,18 @@ from flask import (
     Flask, render_template, request, jsonify,
     send_from_directory, url_for
 )
-from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 from config import Config
+from helpers import local_only
 
 # ── Settings persistence ─────────────────────────
 
 SETTINGS_FILE = Config.DATA_DIR / 'settings.json'
+
+# Serializes storage-directory migration and the runtime Config switch so two
+# concurrent migrations can't interleave and corrupt the move.
+_migration_lock = threading.Lock()
 
 
 def load_settings() -> dict:
@@ -41,9 +45,11 @@ def save_settings(data: dict):
     """Save settings to settings.json (merges with existing)"""
     current = load_settings()
     current.update(data)
-    SETTINGS_FILE.write_text(
+    # atomic_write_text comes from `from utils import *` below; resolved at
+    # call time (all save_settings calls happen after that import runs).
+    atomic_write_text(
+        SETTINGS_FILE,
         json.dumps(current, indent=2, ensure_ascii=False),
-        encoding='utf-8'
     )
 
 
@@ -52,20 +58,35 @@ def save_settings(data: dict):
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
-CORS(app)
+
+def _has_cli_arg(flag: str) -> bool:
+    """True if the given CLI flag was passed (so it overrides settings.json)."""
+    return any(a.startswith(flag) for a in sys.argv[1:])
+
+
+def _apply_persisted_settings(persisted: dict):
+    """Apply values loaded from settings.json onto Config at startup."""
+    # data_dir and port honor CLI overrides, so they stay explicit.
+    if 'data_dir' in persisted and not _has_cli_arg('--data-dir'):
+        Config.DATA_DIR = Path(persisted['data_dir'])
+        Config.UPLOAD_DIR = Config.DATA_DIR / 'uploads'
+        Config.THUMBNAIL_DIR = Config.DATA_DIR / 'thumbnails'
+    if 'port' in persisted and not _has_cli_arg('--port'):
+        Config.PORT = int(persisted['port'])
+
+    # Simple persisted scalars: (settings key, Config attr, coercion).
+    for key, attr, coerce in (
+        ('staging_timeout', 'STAGING_TIMEOUT', int),
+        ('theme', 'THEME', str),
+        ('allowed_origin_ports', 'ALLOWED_ORIGIN_PORTS',
+         lambda v: [int(p) for p in v] if isinstance(v, list) else Config.ALLOWED_ORIGIN_PORTS),
+    ):
+        if key in persisted:
+            setattr(Config, attr, coerce(persisted[key]))
+
 
 # Apply persisted settings
-_persisted = load_settings()
-if 'data_dir' in _persisted and not any(a.startswith('--data-dir') for a in sys.argv[1:]):
-    Config.DATA_DIR = Path(_persisted['data_dir'])
-    Config.UPLOAD_DIR = Config.DATA_DIR / 'uploads'
-    Config.THUMBNAIL_DIR = Config.DATA_DIR / 'thumbnails'
-if 'staging_timeout' in _persisted:
-    Config.STAGING_TIMEOUT = int(_persisted['staging_timeout'])
-if 'port' in _persisted and not any(a.startswith('--port') for a in sys.argv[1:]):
-    Config.PORT = int(_persisted['port'])
-if 'theme' in _persisted:
-    Config.THEME = _persisted['theme']
+_apply_persisted_settings(load_settings())
 
 # Ensure root dirs exist
 Config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -79,36 +100,78 @@ Config.STAGING_DIR.mkdir(parents=True, exist_ok=True)
 # Register MIME types
 mimetypes.add_type('image/webp', '.webp')
 mimetypes.add_type('image/avif', '.avif')
+mimetypes.add_type('font/woff2', '.woff2')
 
 # ── Utilities ────────────────────────────────────
 
 from utils import *  # noqa: F403, E402
 
+# ── Dynamic CORS ─────────────────────────────────
+# Cross-origin requests are allowed only from the configured port allowlist.
+# The check runs per-request (reads Config live), so updating the allowlist
+# via /api/settings/allowed-ports takes effect immediately — no restart.
+
+_LOCAL_IP = get_local_ip()
+
+
+def _allowed_origins() -> set:
+    """Build the set of permitted Origin values from the port allowlist."""
+    hosts = {'localhost', '127.0.0.1'}
+    if _LOCAL_IP:
+        hosts.add(_LOCAL_IP)
+    origins = set()
+    for port in Config.ALLOWED_ORIGIN_PORTS:
+        for host in hosts:
+            origins.add(f'http://{host}:{port}')
+            origins.add(f'https://{host}:{port}')
+    return origins
+
+
+@app.after_request
+def _apply_cors(resp):
+    origin = request.headers.get('Origin')
+    if origin and origin in _allowed_origins():
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        resp.headers.setdefault('Vary', 'Origin')
+    return resp
+
+
 # ── Staging (upload confirmation) ─────────────────
 
 # Register this module as 'app' so staging.py's 'from app import app' works
-import sys
 sys.modules['app'] = sys.modules[__name__]
 
 import staging  # noqa: F811, E402
 # cleanup_all_staging() is called in main() after all imports
 
+# Register domain route blueprints (groups, images/tags/batch). File serving,
+# settings, system, and the page route stay in this module.
+from routes import register_blueprints  # noqa: E402
+register_blueprints(app)
+
 _http_server = None  # Set by make_server in _serve_forever()
 
 # ── Page Routes ─────────────────────────────────
 
-@app.route('/')
-def index():
-    """Main page"""
+def _render_index():
+    """Render the single-page app shell (shared by / and the SPA 404 fallback)."""
     return render_template('index.html',
         title=Config.SITE_TITLE,
         port=Config.PORT,
-        local_ip=get_local_ip(),
+        local_ip=_LOCAL_IP,
         max_size_mb=Config.MAX_CONTENT_LENGTH // (1024 * 1024),
         default_group=Config.DEFAULT_GROUP,
         data_dir=str(Config.DATA_DIR),
         theme=getattr(Config, 'THEME', 'auto'),
     )
+
+
+@app.route('/')
+def index():
+    """Main page"""
+    return _render_index()
 
 
 # ── Settings API ─────────────────────────────────
@@ -121,31 +184,69 @@ def api_get_settings():
         'port': Config.PORT,
         'staging_timeout': Config.STAGING_TIMEOUT,
         'theme': getattr(Config, 'THEME', 'auto'),
+        'allowed_origin_ports': Config.ALLOWED_ORIGIN_PORTS,
     })
 
 
+# Serializes native folder-picker dialogs. Tk is not thread-safe and only one
+# dialog should ever be open at a time.
+_browse_lock = threading.Lock()
+
+
+def _pick_folder() -> dict:
+    """Run the tkinter folder dialog in its own thread.
+
+    In tray mode Flask serves from a background thread while the main thread
+    is owned by the tray loop; creating/using Tk on a dedicated short-lived
+    thread keeps every Tk call on one thread and off the request/tray threads.
+    Returns {'path': str|None} or {'error': str, 'status': int}.
+    """
+    result: dict = {}
+
+    def _run():
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            folder = filedialog.askdirectory(title='Select Image Storage Directory')
+            root.destroy()
+            result['path'] = folder or None
+        except ImportError:
+            result['error'] = 'tkinter not available on this system'
+            result['status'] = 501
+        except Exception as e:
+            result['error'] = f'Failed to open folder picker: {str(e)}'
+            result['status'] = 500
+
+    t = threading.Thread(target=_run)
+    t.start()
+    t.join()
+    return result
+
+
 @app.route('/api/settings/browse', methods=['POST'])
+@local_only
 def api_browse_folder():
     """Open native folder-picker dialog via tkinter, return selected path."""
+    if not _browse_lock.acquire(blocking=False):
+        return jsonify({'error': 'A folder picker is already open'}), 409
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        folder = filedialog.askdirectory(title='Select Image Storage Directory')
-        root.destroy()
-        if folder:
-            return jsonify({'path': folder})
-        return jsonify({'path': None, 'error': 'No folder selected'}), 400
-    except ImportError:
-        return jsonify({'error': 'tkinter not available on this system'}), 501
-    except Exception as e:
-        return jsonify({'error': f'Failed to open folder picker: {str(e)}'}), 500
+        result = _pick_folder()
+    finally:
+        _browse_lock.release()
+
+    if 'error' in result:
+        return jsonify({'error': result['error']}), result.get('status', 500)
+    if result.get('path'):
+        return jsonify({'path': result['path']})
+    return jsonify({'path': None, 'error': 'No folder selected'}), 400
 
 
 
 @app.route('/api/settings/data-dir', methods=['PUT'])
+@local_only
 def api_update_data_dir():
     """Update storage directory with file migration."""
     data = request.get_json(silent=True) or {}
@@ -177,64 +278,76 @@ def api_update_data_dir():
 
     migration_log = {'moved_uploads': 0, 'moved_thumbnails': 0, 'groups': []}
 
-    try:
-        # Migrate each group from old to new
-        if Config.UPLOAD_DIR.exists():
-            for group_dir in Config.UPLOAD_DIR.iterdir():
-                if not group_dir.is_dir():
-                    continue
-                gname = group_dir.name
+    # Hold the lock across the whole migration + Config switch so a second
+    # migration (or a restart-triggered switch) can't interleave with this one.
+    with _migration_lock:
+        try:
+            # Migrate each group from old to new
+            if Config.UPLOAD_DIR.exists():
+                for group_dir in Config.UPLOAD_DIR.iterdir():
+                    if not group_dir.is_dir():
+                        continue
+                    gname = group_dir.name
 
-                # Migrate original images
-                files = [f for f in group_dir.iterdir()
-                        if f.is_file() and allowed_file(f.name)]
-                if files:
-                    dst_dir = new_upload / gname
-                    dst_dir.mkdir(parents=True, exist_ok=True)
-                    for f in files:
-                        shutil.move(str(f), str(dst_dir / f.name))
-                        migration_log['moved_uploads'] += 1
+                    # Migrate original images
+                    files = [f for f in group_dir.iterdir()
+                            if f.is_file() and allowed_file(f.name)]
+                    if files:
+                        dst_dir = new_upload / gname
+                        dst_dir.mkdir(parents=True, exist_ok=True)
+                        for f in files:
+                            shutil.move(str(f), str(dst_dir / f.name))
+                            migration_log['moved_uploads'] += 1
 
-                # Migrate thumbnails for this group
-                old_td = Config.THUMBNAIL_DIR / gname
-                if old_td.exists():
-                    tfiles = [f for f in old_td.iterdir() if f.is_file()]
-                    if tfiles:
-                        new_td = new_thumb / gname
-                        new_td.mkdir(parents=True, exist_ok=True)
-                        for f in tfiles:
-                            shutil.move(str(f), str(new_td / f.name))
-                            migration_log['moved_thumbnails'] += 1
+                    # Migrate sidecar files (tag map + dimension cache) so
+                    # they follow their images and don't block old-dir cleanup.
+                    for sidecar in ('.tags.json', '.dims.json'):
+                        sc = group_dir / sidecar
+                        if sc.exists():
+                            dst_dir = new_upload / gname
+                            dst_dir.mkdir(parents=True, exist_ok=True)
+                            shutil.move(str(sc), str(dst_dir / sidecar))
 
-                migration_log['groups'].append(gname)
+                    # Migrate thumbnails for this group
+                    old_td = Config.THUMBNAIL_DIR / gname
+                    if old_td.exists():
+                        tfiles = [f for f in old_td.iterdir() if f.is_file()]
+                        if tfiles:
+                            new_td = new_thumb / gname
+                            new_td.mkdir(parents=True, exist_ok=True)
+                            for f in tfiles:
+                                shutil.move(str(f), str(new_td / f.name))
+                                migration_log['moved_thumbnails'] += 1
 
-        # Clean up old uploads/thumbnails dirs only (NOT parent)
-        for p in [Config.THUMBNAIL_DIR, Config.UPLOAD_DIR]:
-            if p.exists():
-                try:
-                    for child in sorted(p.iterdir(), reverse=True):
-                        if child.is_dir():
-                            try:
-                                child.rmdir()
-                            except OSError:
-                                pass
-                    p.rmdir()
-                except OSError:
-                    pass
+                    migration_log['groups'].append(gname)
 
-    except Exception as e:
-        migration_log['error'] = str(e)
+            # Clean up old uploads/thumbnails dirs only (NOT parent)
+            for p in [Config.THUMBNAIL_DIR, Config.UPLOAD_DIR]:
+                if p.exists():
+                    try:
+                        for child in sorted(p.iterdir(), reverse=True):
+                            if child.is_dir():
+                                try:
+                                    child.rmdir()
+                                except OSError:
+                                    pass
+                        p.rmdir()
+                    except OSError:
+                        pass
 
-    # Switch at runtime
-    Config.DATA_DIR = new_root
-    Config.UPLOAD_DIR = new_upload
-    Config.THUMBNAIL_DIR = new_thumb
+        except Exception as e:
+            migration_log['error'] = str(e)
 
-    # Ensure default group exists in new location
-    (Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
-    (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+        # Switch at runtime
+        Config.DATA_DIR = new_root
+        Config.UPLOAD_DIR = new_upload
+        Config.THUMBNAIL_DIR = new_thumb
 
-    save_settings({'data_dir': str(new_root)})
+        # Ensure default group exists in new location
+        (Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+        (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+
+        save_settings({'data_dir': str(new_root)})
 
     msg = 'Storage directory updated instantly.'
     if migration_log['moved_uploads'] > 0:
@@ -271,6 +384,7 @@ def api_update_staging_timeout():
 
 
 @app.route('/api/settings/port', methods=['PUT'])
+@local_only
 def api_update_port():
     """Update server port with availability check and auto-restart."""
     data = request.get_json(silent=True) or {}
@@ -286,12 +400,43 @@ def api_update_port():
         if port == Config.PORT:
             return jsonify({'error': 'Port is the same as the current one'}), 400
 
+        # Reject ports already bound by another process — the new port must be
+        # free for the server to rebind to it on restart.
+        if not is_port_available(port):
+            return jsonify({'error': f'Port {port} is already in use'}), 400
+
         # Save to settings.json only — takes effect on next restart
         save_settings({'port': port})
 
         return jsonify({'success': True, 'saved_port': port, '_applied_on_restart': True})
     except (ValueError, TypeError):
         return jsonify({'error': 'Invalid port value'}), 400
+
+
+@app.route('/api/settings/allowed-ports', methods=['PUT'])
+@local_only
+def api_update_allowed_ports():
+    """Update the CORS origin port allowlist. Applies immediately (no restart)."""
+    data = request.get_json(silent=True) or {}
+    ports = data.get('allowed_origin_ports')
+
+    if not isinstance(ports, list):
+        return jsonify({'error': 'allowed_origin_ports must be a list'}), 400
+
+    clean = []
+    for p in ports:
+        try:
+            pi = int(p)
+        except (ValueError, TypeError):
+            return jsonify({'error': f'Invalid port: {p}'}), 400
+        if pi < 1 or pi > 65535:
+            return jsonify({'error': f'Port out of range: {pi}'}), 400
+        if pi not in clean:
+            clean.append(pi)
+
+    Config.ALLOWED_ORIGIN_PORTS = clean
+    save_settings({'allowed_origin_ports': clean})
+    return jsonify({'success': True, 'allowed_origin_ports': clean})
 
 
 @app.route('/api/settings/theme', methods=['PUT'])
@@ -308,528 +453,29 @@ def api_update_theme():
     return jsonify({'success': True, 'theme': theme})
 
 
-# ── Group API ────────────────────────────────────
-
-@app.route('/api/groups', methods=['GET'])
-def api_list_groups():
-    """List all groups"""
-    return jsonify(scan_groups())
-
-
-@app.route('/api/groups', methods=['POST'])
-def api_create_group():
-    """Create a new group"""
-    data = request.get_json(silent=True) or {}
-    name = (data.get('name', '') or '').strip()
-
-    if not name:
-        return jsonify({'error': 'Group name is required'}), 400
-    if not is_valid_group_name(name):
-        return jsonify({'error': 'Group name can only contain letters, numbers, underscores, and hyphens'}), 400
-
-    group_dir = Config.UPLOAD_DIR / name
-    if group_dir.exists():
-        return jsonify({'error': f'Group "{name}" already exists'}), 409
-
-    ensure_group_dirs(name)
-    return jsonify({'success': True, 'name': name}), 201
-
-
-@app.route('/api/groups/<name>', methods=['DELETE'])
-def api_delete_group(name):
-    """Delete a group and all its images"""
-    if name == Config.DEFAULT_GROUP:
-        return jsonify({'error': 'Cannot delete the default group'}), 400
-    if not is_valid_group_name(name):
-        return jsonify({'error': 'Invalid group name'}), 400
-
-    group_dir = Config.UPLOAD_DIR / name
-    thumb_dir = Config.THUMBNAIL_DIR / name
-
-    if not group_dir.exists():
-        return jsonify({'error': 'Group not found'}), 404
-
-    try:
-        shutil.rmtree(str(group_dir))
-        if thumb_dir.exists():
-            shutil.rmtree(str(thumb_dir))
-    except Exception as e:
-        return jsonify({'error': f'Delete failed: {str(e)}'}), 500
-
-    return jsonify({'success': True})
-
-
-@app.route('/api/groups/<name>', methods=['PUT'])
-def api_rename_group(name):
-    """Rename a group"""
-    if name == Config.DEFAULT_GROUP:
-        return jsonify({'error': 'Cannot rename the default group'}), 400
-
-    data = request.get_json(silent=True) or {}
-    new_name = (data.get('new_name', '') or '').strip()
-
-    if not new_name:
-        return jsonify({'error': 'New name is required'}), 400
-    if not is_valid_group_name(new_name):
-        return jsonify({'error': 'Name can only contain letters, numbers, underscores, and hyphens'}), 400
-
-    old_dir = Config.UPLOAD_DIR / name
-    new_dir = Config.UPLOAD_DIR / new_name
-    if not old_dir.exists():
-        return jsonify({'error': 'Group not found'}), 404
-    if new_dir.exists():
-        return jsonify({'error': f'Group "{new_name}" already exists'}), 409
-
-    old_thumb = Config.THUMBNAIL_DIR / name
-    new_thumb = Config.THUMBNAIL_DIR / new_name
-
-    try:
-        old_dir.rename(new_dir)
-        if old_thumb.exists():
-            old_thumb.rename(new_thumb)
-    except Exception as e:
-        return jsonify({'error': f'Rename failed: {str(e)}'}), 500
-
-    return jsonify({'success': True, 'name': new_name}), 200
-
-
-# ── Image API ────────────────────────────────────
-
-@app.route('/api/images')
-def api_images():
-    """Get images for a specific group, optional tag filter"""
-    group = request.args.get('group', Config.DEFAULT_GROUP)
-    tag_filter = request.args.get('tag', '').strip() or None
-    return jsonify(scan_images(group, tag_filter=tag_filter))
-
-
-@app.route('/api/upload', methods=['POST'])
-def api_upload():
-    """Upload images (single or multiple, to a specific group)"""
-    group = request.args.get('group', Config.DEFAULT_GROUP)
-    ensure_group_dirs(group)
-
-    if 'files' not in request.files:
-        return jsonify({'error': 'No file data in request'}), 400
-
-    files = request.files.getlist('files')
-    files = [f for f in files if f and f.filename and f.filename.strip()]
-
-    if not files:
-        return jsonify({'error': 'Please select files to upload'}), 400
-
-    # Optional custom filenames (JSON array, one per file, by index)
-    custom_names = []
-    raw = request.form.get('filenames', '')
-    if raw:
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                custom_names = parsed
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    uploaded = []
-    errors = []
-
-    for i, file in enumerate(files):
-        if not allowed_file(file.filename):
-            errors.append({
-                'filename': file.filename,
-                'error': f'Unsupported format. Allowed: {", ".join(sorted(Config.ALLOWED_EXTENSIONS))}'
-            })
-            continue
-
-        # Determine effective filename (custom name if provided)
-        # Make sure extension is preserved from the original file
-        _, orig_ext = os.path.splitext(file.filename)
-        use_name = file.filename
-        if i < len(custom_names) and custom_names[i]:
-            cn = custom_names[i].strip()
-            if cn:
-                # Ensure it has the same extension
-                cn_base, cn_ext = os.path.splitext(cn)
-                if not cn_ext:
-                    cn += orig_ext.lower()
-                use_name = cn
-
-        # Validate filename (reject unsafe characters, no auto-sanitize)
-        safe = secure_filename(use_name)
-        if not safe or safe != use_name:
-            errors.append({
-                'filename': file.filename,
-                'error': 'Filename contains invalid or unsafe characters. Use only letters, numbers, dots, underscores, and hyphens.'
-            })
-            continue
-
-        filepath = Config.UPLOAD_DIR / group / safe
-        if filepath.exists():
-            errors.append({
-                'filename': file.filename,
-                'error': f'File "{safe}" already exists in this group'
-            })
-            continue
-
-        try:
-            file.save(str(filepath))
-        except Exception as e:
-            errors.append({'filename': file.filename, 'error': f'Save failed: {str(e)}'})
-            continue
-
-        # Generate thumbnail
-        ext = filepath.suffix.lower()
-        if ext in Config.PILLOW_FORMATS:
-            thumbpath = Config.THUMBNAIL_DIR / group / safe
-            generate_thumbnail(filepath, thumbpath)
-
-        info = get_image_info(safe, group)
-        if info:
-            uploaded.append(info)
-
-    return jsonify({'uploaded': uploaded, 'errors': errors})
-
-
-@app.route('/api/image/<filename>', methods=['DELETE'])
-def api_delete_image(filename):
-    """Delete an image (original + thumbnail)"""
-    group = request.args.get('group', Config.DEFAULT_GROUP)
-    safe = secure_filename(filename)
-    if not safe:
-        return jsonify({'error': 'Invalid filename'}), 400
-
-    filepath = Config.UPLOAD_DIR / group / safe
-    if not filepath.exists():
-        return jsonify({'error': 'File not found'}), 404
-
-    try:
-        filepath.unlink()
-    except Exception as e:
-        return jsonify({'error': f'Delete failed: {str(e)}'}), 500
-
-    # Remove tag entry
-    delete_tag_entry(group, safe)
-
-    thumbpath = Config.THUMBNAIL_DIR / group / safe
-    if thumbpath.exists():
-        try:
-            thumbpath.unlink()
-        except Exception:
-            pass
-
-    return jsonify({'success': True, 'filename': safe})
-
-
-@app.route('/api/image/<filename>/rename', methods=['PUT'])
-def api_rename_image(filename):
-    """Rename an image within its group"""
-    group = request.args.get('group', Config.DEFAULT_GROUP)
-    data = request.get_json(silent=True) or {}
-    new_name = (data.get('new_name', '') or '').strip()
-
-    if not new_name:
-        return jsonify({'error': 'New filename is required'}), 400
-
-    safe_old = secure_filename(filename)
-    safe_new = secure_filename(new_name)
-
-    if not safe_old:
-        return jsonify({'error': 'Invalid original filename'}), 400
-    if not safe_new:
-        return jsonify({'error': 'Invalid new filename'}), 400
-
-    # Extension must match
-    old_ext = Path(safe_old).suffix.lower()
-    new_ext = Path(safe_new).suffix.lower()
-    if old_ext != new_ext:
-        return jsonify({'error': f'Extension must remain the same ({old_ext})'}), 400
-
-    old_path = Config.UPLOAD_DIR / group / safe_old
-    new_path = Config.UPLOAD_DIR / group / safe_new
-
-    if not old_path.exists():
-        return jsonify({'error': 'File not found'}), 404
-    if new_path.exists():
-        return jsonify({'error': 'A file with that name already exists'}), 409
-
-    try:
-        old_path.rename(new_path)
-    except Exception as e:
-        return jsonify({'error': f'Rename failed: {str(e)}'}), 500
-
-    # Sync tag entry
-    rename_tag_entry(group, safe_old, safe_new)
-
-    # Rename thumbnail if it exists
-    old_thumb = Config.THUMBNAIL_DIR / group / safe_old
-    new_thumb = Config.THUMBNAIL_DIR / group / safe_new
-    if old_thumb.exists():
-        try:
-            old_thumb.rename(new_thumb)
-        except Exception:
-            pass
-
-    info = get_image_info(safe_new, group)
-    return jsonify({'success': True, 'filename': safe_new, 'info': info})
-
-
-@app.route('/api/image/<filename>/tag', methods=['PUT'])
-def api_set_tag(filename):
-    """Set or update the tag for an image."""
-    group = request.args.get('group', Config.DEFAULT_GROUP)
-    data = request.get_json(silent=True) or {}
-    tag = (data.get('tag', '') or '').strip()
-
-    safe = secure_filename(filename)
-    if not safe:
-        return jsonify({'error': 'Invalid filename'}), 400
-
-    filepath = Config.UPLOAD_DIR / group / safe
-    if not filepath.exists():
-        return jsonify({'error': 'File not found'}), 404
-
-    if not tag:
-        return jsonify({'error': 'Tag cannot be empty'}), 400
-    if len(tag) > 64:
-        return jsonify({'error': 'Tag must be 64 characters or fewer'}), 400
-    # Only allow letters, numbers, spaces, hyphens, underscores
-    if not re.match(r'^[\w\s\-]+$', tag):
-        return jsonify({'error': 'Tag can only contain letters, numbers, spaces, hyphens, and underscores'}), 400
-
-    save_tag(group, safe, tag)
-    info = get_image_info(safe, group)
-    return jsonify({'success': True, 'tag': tag, 'info': info})
-
-
-@app.route('/api/image/<filename>/tag', methods=['DELETE'])
-def api_remove_tag(filename):
-    """Remove the tag from an image."""
-    group = request.args.get('group', Config.DEFAULT_GROUP)
-
-    safe = secure_filename(filename)
-    if not safe:
-        return jsonify({'error': 'Invalid filename'}), 400
-
-    filepath = Config.UPLOAD_DIR / group / safe
-    if not filepath.exists():
-        return jsonify({'error': 'File not found'}), 404
-
-    remove_tag(group, safe)
-    info = get_image_info(safe, group)
-    return jsonify({'success': True, 'info': info})
-
-
-@app.route('/api/tags/<tag>', methods=['PUT'])
-def api_rename_tag_global(tag):
-    """Rename a tag globally across all images in a group."""
-    group = request.args.get('group', Config.DEFAULT_GROUP)
-    data = request.get_json(silent=True) or {}
-    new_tag = (data.get('new_tag', '') or '').strip()
-
-    if not new_tag:
-        return jsonify({'error': 'New tag name is required'}), 400
-    if len(new_tag) > 64:
-        return jsonify({'error': 'Tag must be 64 characters or fewer'}), 400
-    if not re.match(r'^[\w\s\-]+$', new_tag):
-        return jsonify({'error': 'Tag can only contain letters, numbers, spaces, hyphens, and underscores'}), 400
-    if new_tag == tag:
-        return jsonify({'error': 'New tag is the same as the old one'}), 400
-
-    count = rename_tag_global(group, tag, new_tag)
-    return jsonify({'success': True, 'old_tag': tag, 'new_tag': new_tag, 'updated': count})
-
-
-@app.route('/api/tags/<tag>', methods=['DELETE'])
-def api_delete_tag_global(tag):
-    """Remove a tag from all images in a group."""
-    group = request.args.get('group', Config.DEFAULT_GROUP)
-    count = delete_tag_global(group, tag)
-    return jsonify({'success': True, 'tag': tag, 'removed': count})
-
-
-@app.route('/api/image/<filename>/move', methods=['PUT'])
-def api_move_image(filename):
-    """Move an image to another group"""
-    from_group = request.args.get('group', Config.DEFAULT_GROUP)
-    data = request.get_json(silent=True) or {}
-    to_group = (data.get('to_group', '') or '').strip()
-
-    if not to_group:
-        return jsonify({'error': 'Target group is required'}), 400
-    if not is_valid_group_name(to_group):
-        return jsonify({'error': 'Invalid target group name'}), 400
-    if to_group == from_group:
-        return jsonify({'error': 'Target group is the same as the current group'}), 400
-
-    safe_file = secure_filename(filename)
-    if not safe_file or not allowed_file(safe_file):
-        return jsonify({'error': 'Invalid filename'}), 400
-
-    src_path = Config.UPLOAD_DIR / from_group / safe_file
-    dst_path = Config.UPLOAD_DIR / to_group / safe_file
-
-    if not src_path.exists():
-        return jsonify({'error': 'File not found'}), 404
-    if dst_path.exists():
-        return jsonify({'error': f'A file named "{safe_file}" already exists in "{to_group}"'}), 409
-
-    # Ensure target group dirs exist
-    ensure_group_dirs(to_group)
-
-    try:
-        shutil.move(str(src_path), str(dst_path))
-    except Exception as e:
-        return jsonify({'error': f'Move failed: {str(e)}'}), 500
-
-    # Move thumbnail
-    src_thumb = Config.THUMBNAIL_DIR / from_group / safe_file
-    dst_thumb = Config.THUMBNAIL_DIR / to_group / safe_file
-    if src_thumb.exists():
-        try:
-            src_thumb.rename(dst_thumb)
-        except Exception:
-            pass
-
-    # Sync tag entry
-    move_tag_entry(from_group, to_group, safe_file)
-
-    info = get_image_info(safe_file, to_group)
-    return jsonify({'success': True, 'filename': safe_file, 'group': to_group, 'info': info})
-
-
-# ── Batch Operations ────────────────────────────
-
-@app.route('/api/images/batch-delete', methods=['POST'])
-def api_batch_delete():
-    """Delete multiple images at once"""
-    data = request.get_json(silent=True) or {}
-    group = data.get('group', Config.DEFAULT_GROUP)
-    files = data.get('files', [])
-
-    if not files or not isinstance(files, list):
-        return jsonify({'error': 'File list is required'}), 400
-
-    results = {'deleted': [], 'errors': []}
-
-    for filename in files:
-        safe = secure_filename(filename)
-        if not safe:
-            results['errors'].append({'filename': filename, 'error': 'Invalid filename'})
-            continue
-
-        filepath = Config.UPLOAD_DIR / group / safe
-        if not filepath.exists():
-            results['errors'].append({'filename': filename, 'error': 'Not found'})
-            continue
-
-        try:
-            filepath.unlink()
-            thumbpath = Config.THUMBNAIL_DIR / group / safe
-            if thumbpath.exists():
-                thumbpath.unlink()
-            delete_tag_entry(group, safe)
-            results['deleted'].append(filename)
-        except Exception as e:
-            results['errors'].append({'filename': filename, 'error': str(e)})
-
-    return jsonify({'success': True, **results})
-
-
-@app.route('/api/images/batch-move', methods=['POST'])
-def api_batch_move():
-    """Move multiple images to another group"""
-    data = request.get_json(silent=True) or {}
-    group = data.get('group', Config.DEFAULT_GROUP)
-    to_group = data.get('to_group', '').strip()
-    files = data.get('files', [])
-
-    if not files or not isinstance(files, list):
-        return jsonify({'error': 'File list is required'}), 400
-    if not to_group:
-        return jsonify({'error': 'Target group is required'}), 400
-    if to_group == group:
-        return jsonify({'error': 'Target group is the same as the current group'}), 400
-
-    ensure_group_dirs(to_group)
-    results = {'moved': [], 'errors': []}
-
-    for filename in files:
-        safe = secure_filename(filename)
-        if not safe or not allowed_file(safe):
-            results['errors'].append({'filename': filename, 'error': 'Invalid filename'})
-            continue
-
-        src = Config.UPLOAD_DIR / group / safe
-        dst = Config.UPLOAD_DIR / to_group / safe
-
-        if not src.exists():
-            results['errors'].append({'filename': filename, 'error': 'Not found'})
-            continue
-        if dst.exists():
-            results['errors'].append({'filename': filename, 'error': 'Already exists in target'})
-            continue
-
-        try:
-            shutil.move(str(src), str(dst))
-            # Move thumbnail
-            src_thumb = Config.THUMBNAIL_DIR / group / safe
-            dst_thumb = Config.THUMBNAIL_DIR / to_group / safe
-            if src_thumb.exists():
-                src_thumb.rename(dst_thumb)
-            move_tag_entry(group, to_group, safe)
-            results['moved'].append(filename)
-        except Exception as e:
-            results['errors'].append({'filename': filename, 'error': str(e)})
-
-    return jsonify({'success': True, **results})
-
-
-@app.route('/api/images/batch-tag', methods=['POST'])
-def api_batch_tag():
-    """Set the same tag for multiple images at once."""
-    data = request.get_json(silent=True) or {}
-    group = data.get('group', Config.DEFAULT_GROUP)
-    tag = (data.get('tag', '') or '').strip()
-    files = data.get('files', [])
-
-    if not files or not isinstance(files, list):
-        return jsonify({'error': 'File list is required'}), 400
-    if not tag:
-        return jsonify({'error': 'Tag cannot be empty'}), 400
-    if len(tag) > 64:
-        return jsonify({'error': 'Tag must be 64 characters or fewer'}), 400
-    if not re.match(r'^[\w\s\-]+$', tag):
-        return jsonify({'error': 'Tag can only contain letters, numbers, spaces, hyphens, and underscores'}), 400
-
-    results = {'tagged': [], 'errors': []}
-
-    for filename in files:
-        safe = secure_filename(filename)
-        if not safe:
-            results['errors'].append({'filename': filename, 'error': 'Invalid filename'})
-            continue
-
-        filepath = Config.UPLOAD_DIR / group / safe
-        if not filepath.exists():
-            results['errors'].append({'filename': filename, 'error': 'Not found'})
-            continue
-
-        try:
-            save_tag(group, safe, tag)
-            results['tagged'].append(filename)
-        except Exception as e:
-            results['errors'].append({'filename': filename, 'error': str(e)})
-
-    return jsonify({'success': True, 'tag': tag, **results})
-
-
 # ── Static File Routes ──────────────────────────
+
+def _harden_image_response(resp, filename: str):
+    """Add anti-XSS / anti-sniffing headers to a served image.
+
+    SVGs can embed <script>; served with image/svg+xml they'd run in this
+    origin if opened as a top-level document. `sandbox` (plus a locked-down
+    default-src) disables scripts when the SVG is loaded as a document, while
+    <img> embedding still renders. nosniff stops MIME confusion for all files.
+    """
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    if filename.lower().endswith('.svg'):
+        resp.headers['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    return resp
+
 
 @app.route('/uploads/<group>/<filename>')
 def serve_upload(group, filename):
     """Serve original image"""
     safe_group = secure_filename(group) or Config.DEFAULT_GROUP
     safe_file = secure_filename(filename)
-    return send_from_directory(str(Config.UPLOAD_DIR / safe_group), safe_file)
+    resp = send_from_directory(str(Config.UPLOAD_DIR / safe_group), safe_file)
+    return _harden_image_response(resp, safe_file)
 
 
 @app.route('/thumbnails/<group>/<filename>')
@@ -839,13 +485,16 @@ def serve_thumbnail(group, filename):
     safe_file = secure_filename(filename)
     thumbpath = Config.THUMBNAIL_DIR / safe_group / safe_file
     if thumbpath.exists():
-        return send_from_directory(str(Config.THUMBNAIL_DIR / safe_group), safe_file)
-    return send_from_directory(str(Config.UPLOAD_DIR / safe_group), safe_file)
+        resp = send_from_directory(str(Config.THUMBNAIL_DIR / safe_group), safe_file)
+    else:
+        resp = send_from_directory(str(Config.UPLOAD_DIR / safe_group), safe_file)
+    return _harden_image_response(resp, safe_file)
 
 
 # ── System API ──────────────────────────────────
 
 @app.route('/api/shutdown', methods=['POST'])
+@local_only
 def api_shutdown():
     """Shut down the server (used by tray restart / Exit)."""
     # Apply pending port from settings.json so restart picks it up
@@ -875,15 +524,7 @@ def request_entity_too_large(e):
 def page_not_found(e):
     if request.path.startswith('/api/'):
         return jsonify({'error': 'Endpoint not found'}), 404
-    return render_template('index.html',
-        title=Config.SITE_TITLE,
-        port=Config.PORT,
-        local_ip=get_local_ip(),
-        max_size_mb=Config.MAX_CONTENT_LENGTH // (1024 * 1024),
-        default_group=Config.DEFAULT_GROUP,
-        data_dir=str(Config.DATA_DIR),
-        theme=getattr(Config, 'THEME', 'auto'),
-    ), 404
+    return _render_index(), 404
 
 
 # ── Entry ────────────────────────────────────────
@@ -975,7 +616,6 @@ def main_tray():
     local_ip = get_local_ip()
     print_banner(local_ip=local_ip, port=Config.PORT)
 
-    import threading
     server_stopped = threading.Event()
 
     def run_with_restart():
@@ -986,7 +626,6 @@ def main_tray():
                 # Small delay then re-enter _serve_tray for a clean restart
                 time.sleep(0.3)
 
-    import time
     server_thread = threading.Thread(target=run_with_restart, daemon=True)
     server_thread.start()
 

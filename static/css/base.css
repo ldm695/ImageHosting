@@ -1,0 +1,171 @@
+/* ═══════════════════════════════════════════════════════════
+   ImageHosting — Foundation: reset, scrollbar, app bar, chips, layout
+   (Split from style.css; @import'd there. Order preserved for cascade.)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Material Symbols ──────────────────────────── */
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  font-size: 1.25rem;
+  line-height: 1;
+  vertical-align: middle;
+  display: inline-block;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Reset ─────────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--md-font);
+  background: var(--md-surface);
+  color: var(--md-on-surface);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+::selection {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+}
+
+/* ── Scrollbar ─────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--md-outline-variant);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-outline);
+}
+
+/* ── Top App Bar (MD3) ─────────────────────────── */
+
+.top-app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 24px;
+  background: var(--md-surface-container);
+  border-bottom: 1px solid var(--md-outline-variant);
+  gap: 16px;
+}
+
+.top-app-bar__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.top-app-bar__title {
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--md-on-surface);
+}
+
+.top-app-bar__icon {
+  font-size: 1.6rem;
+  color: var(--md-primary);
+  width: 1.6rem;
+  height: 1.6rem;
+  flex-shrink: 0;
+}
+
+.top-app-bar__trailing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ── Chip (MD3) ────────────────────────────────── */
+
+.md-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--md-shape-full);
+  background: var(--md-surface-container-high);
+  color: var(--md-on-surface-variant);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  border: 1px solid var(--md-outline-variant);
+}
+
+.md-chip--primary {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  border-color: transparent;
+}
+
+/* ── Access URL ────────────────────────────────── */
+
+.access-url {
+  font-family: var(--md-font-mono);
+  font-size: 0.78rem;
+  color: var(--md-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 4px 10px;
+  background: var(--md-surface-container);
+  border-radius: var(--md-shape-xs);
+}
+
+/* ── Settings Button ──────────────────────────── */
+
+.top-app-bar__settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--md-shape-full);
+  background: transparent;
+  color: var(--md-on-surface-variant);
+  cursor: pointer;
+  transition: all var(--md-motion-standard);
+}
+
+.top-app-bar__settings-btn:hover {
+  background: rgba(208, 188, 255, 0.08);
+  color: var(--md-on-surface);
+}
+
+.top-app-bar__settings-btn .material-symbols-outlined {
+  font-size: 1.3rem;
+}
+
+/* ── Main Content ──────────────────────────────── */
+
+.main-content {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 24px;
+}
+

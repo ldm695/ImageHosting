@@ -51,6 +51,7 @@ files: <file data>
 | Param | Location | Required | Default | Description |
 |---|---|---|---|---|
 | `group` | Query string | No | `"general"` | Target group for the image |
+| `tag` | Query string or form body | No | — | Preset tag applied to the image on confirm. Validated at stage time (rejected with 400 if invalid). |
 | `files` | Form body | Yes | — | Multipart file(s). Only the first file is processed. |
 
 **Success Response (200):**
@@ -61,6 +62,7 @@ files: <file data>
   "filename": "my_photo.jpg",
   "original_name": "my_photo.jpg",
   "group": "general",
+  "tag": "vacation",
   "expires_in": 300,
   "url": "/uploads/general/my_photo.jpg",
   "absolute_path": "C:\\Users\\...\\uploads\\general\\my_photo.jpg",
@@ -74,6 +76,7 @@ files: <file data>
 | `filename` | string | Server-side filename (validated, identical to original if safe) |
 | `original_name` | string | Original filename from client |
 | `group` | string | Target group |
+| `tag` | string | Preset tag echoed back (empty string if none) — applied on confirm |
 | `expires_in` | int | TTL in seconds before auto-cleanup |
 | `url` | string | Predicted final URL path (relative) |
 | `absolute_path` | string | Predicted final disk path (absolute) |
@@ -90,7 +93,7 @@ files: <file data>
 
 | Status | Meaning |
 |---|---|
-| 400 | No file, unsupported format, invalid filename, or invalid parameters |
+| 400 | No file, unsupported format, invalid filename, invalid tag, or invalid parameters |
 | 409 | File with same name already exists in target group |
 | 429 | Too many pending uploads (`STAGING_MAX_FILES` = 100 exceeded) |
 | 500 | File save or metadata write failure |
@@ -144,7 +147,8 @@ Content-Type: application/json
 
 {
   "token": "a1b2c3d4e5f67890a1b2c3d4e5f67890",
-  "group": "pets"
+  "group": "pets",
+  "tag": "vacation"
 }
 ```
 
@@ -152,6 +156,9 @@ Content-Type: application/json
 |---|---|---|---|
 | `token` | Yes | — | The token returned by `/api/upload/stage` |
 | `group` | No | Original group from stage | Override target group |
+| `tag` | No | Preset tag from stage | Override the preset tag. Pass an empty string to clear it; omit the field to keep the staged preset. Validated (400 if invalid). |
+
+> **Why `group`/`tag` are settable again at confirm.** The values passed at **stage** are *intentions* — defaults captured before the file was reviewed. The values at **confirm** are what actually gets written to disk. Because staging exists precisely to let a caller preview before committing, it also lets them change their mind after previewing (e.g. move a photo from `general` to `pets`, or fix a tag). This also supports *progressive decisions*: an agent can stage a file to get a preview first, then decide `group`/`tag` and pass them at confirm. If you already decided everything at stage time, just send `{ "token": "..." }` — the presets apply automatically and no override is needed.
 
 **Success Response (200):**
 
@@ -161,17 +168,18 @@ Content-Type: application/json
   "filename": "my_photo.jpg",
   "group": "pets",
   "url": "/uploads/pets/my_photo.jpg",
-  "absolute_path": "C:\\Users\\...\\uploads\\pets\\my_photo.jpg"
+  "absolute_path": "C:\\Users\\...\\uploads\\pets\\my_photo.jpg",
+  "tag": "vacation"
 }
 ```
 
-(The response includes all fields from `get_image_info()` if available.)
+(The response includes all fields from `get_image_info()` if available, including `tag` when one was set.)
 
 **Error Responses:**
 
 | Status | Meaning |
 |---|---|
-| 400 | Missing or invalid token format |
+| 400 | Missing or invalid token format, or invalid tag |
 | 404 | Token not found or expired (auto-cleaned after `expires_in` seconds) |
 | 500 | File move failure or metadata read failure |
 

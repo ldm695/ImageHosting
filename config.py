@@ -47,9 +47,14 @@ class Config:
     # ── Groups ─────────────────────────────────────
     DEFAULT_GROUP = 'general'
 
+    # ── CORS ────────────────────────────────────────
+    # Cross-origin requests are allowed only from these ports (on localhost /
+    # 127.0.0.1 / the LAN IP). Empty list = same-origin only (most secure).
+    # Evaluated per-request, so changes take effect without a restart.
+    ALLOWED_ORIGIN_PORTS: list = []
+
     # ── Theme ───────────────────────────────────────
     THEME = 'auto'              # auto | light | dark
 
     # ── Page ───────────────────────────────────────
     SITE_TITLE = 'ImageHosting'
-    IMAGES_PER_PAGE = 48

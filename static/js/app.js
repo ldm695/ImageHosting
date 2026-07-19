@@ -52,6 +52,12 @@
   // ── DOM refs ─────────────────────────────────
 
   const $ = id => document.getElementById(id);
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
   const grid = $('imageGrid');
   const emptyState = $('emptyState');
   const imageCount = $('imageCount');
@@ -158,6 +164,9 @@
   const settingsTimeout = $('settingsTimeout');
   const settingsPort = $('settingsPort');
   const browseBtn = $('browseBtn');
+  const allowedPortInput = $('allowedPortInput');
+  const allowedPortAdd = $('allowedPortAdd');
+  const allowedPortsList = $('allowedPortsList');
 
   let pendingDelete = null;
   let pendingDeleteGroup = null;
@@ -166,6 +175,8 @@
   let _initDir = '';
   let _initTimeoutSec = 300;
   let _initPort = 6951;
+  let _allowedPorts = [];
+  let _initAllowedPorts = [];
 
   // ── Snackbar ─────────────────────────────────
 
@@ -838,16 +849,17 @@
 
       grid.appendChild(card);
     });
-
-    grid.addEventListener('click', function iconBtnHandler(e) {
-      var btn = e.target.closest('.md-icon-btn');
-      if (!btn) return;
-      var action = btn.dataset.action;
-      var idx = parseInt(btn.dataset.index, 10);
-      if (action === 'copy' && images[idx]) copyLink(idx);
-      if (action === 'delete' && images[idx]) promptDelete(idx);
-    });
   }
+
+  // Card action buttons (copy / delete) — delegated, registered once.
+  grid.addEventListener('click', function iconBtnHandler(e) {
+    var btn = e.target.closest('.md-icon-btn');
+    if (!btn) return;
+    var action = btn.dataset.action;
+    var idx = parseInt(btn.dataset.index, 10);
+    if (action === 'copy' && images[idx]) copyLink(idx);
+    if (action === 'delete' && images[idx]) promptDelete(idx);
+  });
 
   // ── Upload Rename Dialog ───────────────────────
 
@@ -861,16 +873,26 @@
       if (!f || !f.name) continue;
       var ext = f.name.lastIndexOf('.') > 0 ? f.name.slice(f.name.lastIndexOf('.')) : '';
       var base = ext ? f.name.slice(0, f.name.lastIndexOf('.')) : f.name;
+      var safeName = escapeHtml(f.name);
       html += '\
         <div class="upload-file-row">\
           <span class="material-symbols-outlined file-icon">image</span>\
-          <span class="file-orig" title="' + f.name + '">' + f.name + '</span>\
+          <span class="file-orig" title="' + safeName + '">' + safeName + '</span>\
           <span class="material-symbols-outlined file-arrow">arrow_forward</span>\
-          <input class="dialog__input" data-idx="' + i + '" value="' + base + '"\
-                 placeholder="filename" autocomplete="off" data-ext="' + ext + '">\
+          <input class="dialog__input" data-idx="' + i + '" value="' + escapeHtml(base) + '"\
+                 placeholder="filename" autocomplete="off" data-ext="' + escapeHtml(ext) + '">\
         </div>';
     }
     uploadFileList.innerHTML = html;
+    // Reset tag field and populate suggestions from existing tags
+    var uploadTagInput = $('uploadTagInput');
+    if (uploadTagInput) uploadTagInput.value = '';
+    var uploadTagOptions = $('uploadTagOptions');
+    if (uploadTagOptions) {
+      uploadTagOptions.innerHTML = allTags.map(function(t) {
+        return '<option value="' + t + '"></option>';
+      }).join('');
+    }
     uploadRenameOk.textContent = 'Upload (' + files.length + ' file' + (files.length > 1 ? 's' : '') + ')';
     uploadRenameDialog._customNames = null;
     uploadRenameDialog.classList.add('active');
@@ -904,13 +926,16 @@
       }
     });
 
+    var tagInput = $('uploadTagInput');
+    var uploadTag = tagInput ? tagInput.value.trim() : '';
+
     closeUploadRenameDialog();
-    uploadFiles(files, customNames);
+    uploadFiles(files, customNames, uploadTag);
   });
 
   // ── Upload ────────────────────────────────────
 
-  async function uploadFiles(files, customNames) {
+  async function uploadFiles(files, customNames, tag) {
     if (!files || files.length === 0) return;
 
     var formData = new FormData();
@@ -919,6 +944,9 @@
     }
     if (customNames && customNames.length > 0) {
       formData.append('filenames', JSON.stringify(customNames));
+    }
+    if (tag) {
+      formData.append('tag', tag);
     }
 
     uploadProgress.classList.add('active');
@@ -1686,6 +1714,9 @@
       _initDir = data.data_dir || '';
       _initTimeoutSec = data.staging_timeout || 300;
       _initPort = data.port || 6951;
+      _allowedPorts = Array.isArray(data.allowed_origin_ports) ? data.allowed_origin_ports.slice() : [];
+      _initAllowedPorts = _allowedPorts.slice();
+      renderAllowedPorts();
       setThemeRadio(_initTheme);
     } catch (_e) {
       settingsDataDir.value = AC.dataDir || '';
@@ -1695,6 +1726,9 @@
       _initDir = AC.dataDir || '';
       _initTimeoutSec = 300;
       _initPort = 6951;
+      _allowedPorts = [];
+      _initAllowedPorts = [];
+      renderAllowedPorts();
       setThemeRadio(_initTheme);
     }
     settingsDialog.classList.add('active');
@@ -1704,6 +1738,54 @@
   function closeSettingsDialog() {
     settingsDialog.classList.remove('active');
     settingsError.style.display = 'none';
+  }
+
+  // ── Allowed Cross-Origin Ports ────────────────
+
+  function renderAllowedPorts() {
+    if (_allowedPorts.length === 0) {
+      allowedPortsList.innerHTML = '<span style="font-size:0.78rem;color:var(--md-outline);">None (same-origin only)</span>';
+      return;
+    }
+    allowedPortsList.innerHTML = _allowedPorts.map(function(p) {
+      return '<span class="tag-chip" data-port="' + p + '" style="display:inline-flex;align-items:center;gap:4px;">' +
+        p + '<span class="material-symbols-outlined allowed-port-remove" data-port="' + p +
+        '" style="font-size:1rem;cursor:pointer;">close</span></span>';
+    }).join('');
+  }
+
+  function addAllowedPort() {
+    var val = parseInt(allowedPortInput.value, 10);
+    if (!val || val < 1 || val > 65535) {
+      snackbar('Enter a port between 1 and 65535', 'error');
+      return;
+    }
+    if (_allowedPorts.indexOf(val) === -1) {
+      _allowedPorts.push(val);
+      _allowedPorts.sort(function(a, b) { return a - b; });
+      renderAllowedPorts();
+    }
+    allowedPortInput.value = '';
+    allowedPortInput.focus();
+  }
+
+  allowedPortAdd.addEventListener('click', addAllowedPort);
+  allowedPortInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); addAllowedPort(); }
+  });
+  allowedPortsList.addEventListener('click', function(e) {
+    var btn = e.target.closest('.allowed-port-remove');
+    if (!btn) return;
+    var p = parseInt(btn.dataset.port, 10);
+    _allowedPorts = _allowedPorts.filter(function(x) { return x !== p; });
+    renderAllowedPorts();
+  });
+
+  function samePorts(a, b) {
+    if (a.length !== b.length) return false;
+    var sa = [...a].sort(function(x, y) { return x - y; });
+    var sb = [...b].sort(function(x, y) { return x - y; });
+    return sa.every(function(v, i) { return v === sb[i]; });
   }
 
   function setThemeRadio(value) {
@@ -1776,8 +1858,9 @@
     var dirChanged = dir && dir !== _initDir;
     var timeoutChanged = timeoutSec !== null && timeoutSec !== _initTimeoutSec;
     var portChanged = newPort !== null && newPort !== _initPort;
+    var allowedPortsChanged = !samePorts(_allowedPorts, _initAllowedPorts);
 
-    if (!dirChanged && !timeoutChanged && !portChanged) {
+    if (!dirChanged && !timeoutChanged && !portChanged && !allowedPortsChanged) {
       showSettingsError('Nothing to update');
       return;
     }
@@ -1846,6 +1929,27 @@
         }
       } catch (err) {
         showSettingsError('Port save failed: ' + err.message);
+        hasError = true;
+      }
+    }
+
+    if (allowedPortsChanged && !hasError) {
+      try {
+        const res = await fetch('/api/settings/allowed-ports', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ allowed_origin_ports: _allowedPorts }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          showSettingsError('Allowed ports: ' + data.error);
+          hasError = true;
+        } else {
+          _initAllowedPorts = _allowedPorts.slice();
+          snackbar('Allowed cross-origin ports updated', 'success');
+        }
+      } catch (err) {
+        showSettingsError('Allowed ports save failed: ' + err.message);
         hasError = true;
       }
     }

@@ -17,3 +17,6 @@ __pycache__/
 # Runtime
 settings.json
 *.log
+
+# Testing
+.pytest_cache/

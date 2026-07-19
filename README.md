@@ -8,7 +8,8 @@
 - **暂存确认** — 先暂存再确认，超时自动清理未确认的文件
 - **分组** — 按文件夹组织图片，自由创建/切换/删除分组
 - **重命名** — 灯箱中直接重命名图片
-- **批量操作** — 多选后批量移动或删除
+- **批量操作** — 多选后批量移动、删除或打标签
+- **标签** — 每张图片可打一个标签，按标签筛选，支持全局重命名/删除标签
 - **搜索** — 实时文件名搜索，自动补全提示，键盘上下选择
 - **排序** — 按名称（A-Z / Z-A）或上传时间（最新/最早）排序
 - **复制链接** — 支持 Markdown、HTML、原始 URL 三种格式
@@ -16,8 +17,10 @@
 - **运行时配置端口** — 设置中修改端口，下次启动生效
 - **运行时配置超时** — 设置中修改暂存确认超时时间
 - **系统托盘** — 后台运行，托盘图标支持双击打开浏览器
-- **Material Design 3** — 暗色主题，响应式布局（桌面到手机）
+- **Material Design 3** — 亮 / 暗 / 自动主题切换，响应式布局（桌面到手机）
 - **局域网访问** — 启动时显示 IP，同网络设备直接访问
+- **跨源访问控制** — 端口白名单，默认仅同源；管理/破坏性接口仅限本机调用
+- **离线可用** — Material Symbols 字体自托管，无需连接 Google Fonts
 
 ## 快速启动
 
@@ -39,13 +42,17 @@ python app.py --tray                   # 托盘模式运行（打包后默认）
 
 ## Settings 面板
 
-网页端 Settings 对话框支持三项独立配置，每项单独保存，互不干扰：
+网页端 Settings 对话框支持多项独立配置，每项单独保存，互不干扰：
 
 | 设置项 | 说明 | 生效时机 |
 |--------|------|---------|
 | Image Storage Root Directory | 修改图片存储根目录 | 立即迁移（自动移动文件 + 清理旧目录） |
 | Staging Timeout (minutes) | 暂存确认超时时间 | 立即生效 |
 | Server Port | 服务端口 | 下次启动生效（保存后重启服务器） |
+| Allowed Cross-Origin Ports | 允许跨源访问的端口白名单 | 即时生效（无需重启） |
+| Theme | 主题（自动 / 亮色 / 暗色） | 立即生效 |
+
+> 存储目录、端口、白名单等管理类操作只能从**本机**（宿主机浏览器）调用；局域网其它设备访问这些接口会返回 403。
 
 ## 打包 MSI 安装包
 
@@ -63,7 +70,7 @@ WiX Toolset v3.14+（确保 `candle` / `light` / `heat` 在 PATH 中）
 
 ```bash
 scripts\build_msi.bat
-Enter version (default 1.0.3):
+Enter version (default 1.0.0):
 ```
 
 脚本会自动完成：PyInstaller → heat → candle → light → 清理中间文件。
@@ -88,12 +95,12 @@ heat.exe dir "dist\ImageHosting" -nologo -ag -cg HarvestedFiles ^
 
 # 4. candle — 编译
 candle.exe scripts\installer.wxs dist\ImageHosting.wxs ^
-  -nologo -dSourceDir="dist\ImageHosting" -dVersion=1.0.3 -out "dist\"
+  -nologo -dSourceDir="dist\ImageHosting" -dVersion=1.0.0 -out "dist\"
 
 # 5. light — 链接为 MSI
 light.exe dist\installer.wixobj dist\ImageHosting.wixobj ^
   -nologo -ext WixUIExtension -cultures:en-US ^
-  -out "dist\ImageHosting-1.0.3.msi"
+  -out "dist\ImageHosting-1.0.0.msi"
 
 # 6. 清理中间文件
 rm -rf build ImageHosting.spec dist\ImageHosting dist\*.wxs dist\*.wixobj dist\*.wixpdb
@@ -134,22 +141,43 @@ rm -rf build ImageHosting.spec dist\ImageHosting dist\*.wxs dist\*.wixobj dist\*
 | `DELETE` | `/api/image/<name>?group=general` | 删除图片 |
 | `PUT` | `/api/image/<name>/rename?group=general` | 重命名图片 |
 | `PUT` | `/api/image/<name>/move?group=general` | 移动图片到其他分组 |
+| `PUT` | `/api/image/<name>/tag?group=general` | 设置图片标签 |
+| `DELETE` | `/api/image/<name>/tag?group=general` | 移除图片标签 |
 | `POST` | `/api/images/batch-delete` | 批量删除 |
 | `POST` | `/api/images/batch-move` | 批量移动 |
+| `POST` | `/api/images/batch-tag` | 批量打标签 |
+| `PUT` | `/api/tags/<tag>?group=general` | 全局重命名标签 |
+| `DELETE` | `/api/tags/<tag>?group=general` | 全局删除标签 |
 | `GET` | `/api/groups` | 获取全部分组 |
 | `POST` | `/api/groups` | 创建分组 |
 | `DELETE` | `/api/groups/<name>` | 删除分组 |
 | `GET` | `/api/settings` | 获取当前设置 |
 | `PUT` | `/api/settings/data-dir` | 修改存储目录（自动迁移） |
 | `PUT` | `/api/settings/staging-timeout` | 修改暂存超时 |
-| `PUT` | `/api/settings/port` | 修改端口（下次启动生效） |
+| `PUT` | `/api/settings/port` | 修改端口（校验占用，下次启动生效） |
+| `PUT` | `/api/settings/allowed-ports` | 设置允许跨源的端口白名单（即时生效） |
+| `PUT` | `/api/settings/theme` | 切换主题（auto / light / dark） |
 | `POST` | `/api/settings/browse` | 打开系统文件夹选择器 |
 | `POST` | `/api/shutdown` | 优雅关闭（托盘使用） |
 | `GET` | `/api/status` | 健康检查 |
 
+> **仅本机接口**：`data-dir`、`port`、`allowed-ports`、`browse`、`shutdown`、`DELETE /api/groups/<name>` 只能从本机（loopback）调用，局域网调用返回 403。完整 API 参考见 [`docs/api.md`](docs/api.md)。
+
 > 详细暂存 API 参考文档见 [`docs/staging-api.md`](docs/staging-api.md) —— 包含所有请求/响应字段、preview 机制、错误码和 JavaScript 示例。
 
-### 暂存确认示例（CORS 已启用）
+### 跨源访问（CORS）
+
+默认**只允许同源请求**。若要让运行在其它端口的网页（例如 `localhost:3000` 上的前端）从浏览器调用本服务，需先把该端口加入白名单：在 Settings 对话框的 "Allowed Cross-Origin Ports" 中添加，或调用接口：
+
+```bash
+curl -X PUT "http://localhost:6951/api/settings/allowed-ports" \
+  -H "Content-Type: application/json" \
+  -d '{"allowed_origin_ports": [3000, 8080]}'
+```
+
+白名单基于端口，覆盖 `localhost` / `127.0.0.1` / 本机局域网 IP 的 http 与 https 来源，**即时生效、无需重启**。列表为空即仅同源。下面涉及从其它站点发起的示例，都要求来源端口已在白名单内。
+
+### 暂存确认示例
 
 ```javascript
 // 1. 暂存上传 — 文件进入缓存区
@@ -200,7 +228,7 @@ curl -X POST "http://localhost:6951/api/upload/cancel" \
 
 ### Settings API 独立调用示例
 
-三个设置项有独立的端点，互不干扰：
+各设置项都有独立的端点，互不干扰：
 
 ```bash
 # 只改超时
@@ -219,7 +247,7 @@ curl -X PUT "http://localhost:6951/api/settings/data-dir" \
   -d '{"data_dir": "D:\\MyImages"}'
 ```
 
-### 外部网站上传示例（CORS 已启用）
+### 外部网站上传示例（需将来源端口加入白名单）
 
 ```javascript
 const formData = new FormData();
@@ -243,7 +271,7 @@ fetch('http://192.168.8.146:6951/api/upload?group=wallpapers', {
 
 不传 `group` 时默认上传到 `general` 分组。
 
-### 删除示例（CORS 已启用）
+### 删除示例（跨源时需将来源端口加入白名单）
 
 ```javascript
 // 单张删除
@@ -258,7 +286,7 @@ fetch('http://192.168.8.146:6951/api/images/batch-delete', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    images: ['photo1.jpg', 'photo2.jpg'],
+    files: ['photo1.jpg', 'photo2.jpg'],
     group: 'general',
   }),
 })
@@ -273,19 +301,26 @@ curl -X DELETE "http://localhost:6951/api/image/photo.jpg?group=general"
 # 批量删除（curl）
 curl -X POST "http://localhost:6951/api/images/batch-delete" \
   -H "Content-Type: application/json" \
-  -d '{"images": ["a.jpg", "b.jpg"], "group": "general"}'
+  -d '{"files": ["a.jpg", "b.jpg"], "group": "general"}'
 ```
 
 ## 项目结构
 
 ```
 ImageHosting/
-├── app.py                  # Flask 主程序（入口 + 路由）
+├── app.py                  # Flask 应用初始化 + CORS + 设置/系统路由 + 静态服务 + 入口
+├── helpers.py              # 纯请求助手（local_only 守卫、group/filename 校验）
+├── routes/                 # 领域蓝图
+│   ├── __init__.py         # register_blueprints(app)
+│   ├── groups.py           # 分组 CRUD
+│   └── images.py           # 图片 + 标签 + 批量操作
 ├── config.py               # 配置
-├── utils.py                # 工具函数
-├── staging.py              # 暂存状态 + API 路由
+├── utils.py                # 工具函数 + 标签存储 + 原子写 + 尺寸缓存
+├── staging.py              # 暂存状态 + stage/confirm/cancel 路由
 ├── tray.py                 # 系统托盘
-├── requirements.txt        # 依赖
+├── requirements.txt        # 运行依赖
+├── requirements-dev.txt    # 开发/测试依赖（pytest）
+├── pytest.ini              # pytest 配置
 │
 ├── assets/                 # 图标
 │   ├── icon.ico
@@ -293,26 +328,68 @@ ImageHosting/
 │   └── picture.svg
 │
 ├── docs/
+│   ├── api.md              # 完整 API 参考
 │   └── staging-api.md      # 暂存 API 参考文档
 │
-├── scripts/                # 打包脚本├── scripts/                # 打包脚本
+├── scripts/                # 打包脚本
 │   ├── build.bat
 │   ├── build_msi.bat
-│   └── installer.wxs
+│   ├── installer.wxs
+│   └── convert_icon.py
+│
+├── tests/                  # pytest 套件
+│   ├── conftest.py         # fixtures（隔离临时数据目录、client、上传/暂存助手）
+│   ├── test_api.py         # 核心：分组/上传/标签/暂存/迁移/CORS/SVG
+│   ├── test_utils.py       # 纯函数单测（校验、format_size、原子写、尺寸缓存、helpers）
+│   ├── test_staging.py     # 暂存边界（冲突/上限/group 与 tag 覆盖/预览/幂等取消）
+│   ├── test_settings.py    # 设置校验 + 端口占用 + 仅本机守卫
+│   └── test_images.py      # rename/move/批量/逐文件标签/非 Pillow 格式
+│
+├── e2e/                    # Playwright 浏览器端到端测试（opt-in）
+│   ├── conftest.py         # live_server（真服务线程）+ 每测试新数据目录
+│   └── test_ui.py          # 上传出卡片 / 多选计数 / 删除 / 切主题
 │
 ├── templates/
 │   └── index.html          # 单页 Web UI（HTML 结构）
 │
 └── static/
-    ├── css/
-    │   ├── design-tokens.css   # MD3 设计令牌（颜色、阴影、形状）
-    │   └── style.css           # 组件样式
+    ├── css/                # 入口 style.css @import 以下分片（顺序即层叠序）
+    │   ├── design-tokens.css      # MD3 设计令牌（颜色、阴影、形状）
+    │   ├── material-symbols.css   # 自托管图标字体 @font-face
+    │   ├── base.css               # reset / 滚动条 / 顶栏 / chip / 布局
+    │   ├── components.css         # 上传 / 工具栏 / 标签 / 搜索 / 表单
+    │   ├── cards.css              # 网格 / 卡片 / 图标按钮 / 空态 / toast
+    │   ├── dialogs.css            # 灯箱 / 按钮 / 确认框
+    │   └── style.css              # 入口（仅 @import）
+    ├── fonts/
+    │   └── material-symbols-outlined.woff2   # 自托管图标字体
     └── js/
-        └── app.js              # 前端应用逻辑
+        └── app.js                # 前端应用逻辑
+```
+
+## 测试
+
+分两层。都跑在独立的临时数据目录里，不会碰到 `%APPDATA%` 下的真实数据。
+
+**后端（快，默认）** — pytest 回归测试（112 项），覆盖分组 / 上传 / 标签 / 暂存 / 迁移 / 设置校验 / CORS / 仅本机守卫 / SVG 加固等，用 Flask `test_client`，毫秒级。
+
+**前端 E2E（慢，opt-in）** — `e2e/` 下用 Playwright 驱动真 Chromium 点真 UI（上传出卡片、多选计数、删除、切主题），后台线程起真服务。黑盒，不依赖改 `app.js`。
+
+```bash
+# 安装开发依赖
+pip install -r requirements-dev.txt
+
+# 后端快测（testpaths=tests，不含 e2e）
+pytest
+pytest tests/test_settings.py -k port      # 单文件 / 过滤
+
+# 前端 E2E（首次需下载浏览器）
+playwright install chromium
+pytest e2e
 ```
 
 ## 技术栈
 
 - **后端：** Python 3、Flask、Pillow
-- **前端：** 原生 JavaScript、Material Design 3（CSS）、Google Material Symbols
+- **前端：** 原生 JavaScript、Material Design 3（CSS）、Material Symbols（自托管，离线可用）
 - **打包：** PyInstaller + WiX Toolset（MSI）

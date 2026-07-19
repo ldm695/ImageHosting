@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="light dark">
   <meta name="darkreader-lock">
   <title>{{ title }}</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0,0">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/material-symbols.css') }}?v=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="alternate icon" href="{{ url_for('static', filename='favicon.ico') }}">
 </head>
@@ -250,6 +250,20 @@
           Changing the port will restart the server automatically.
         </div>
         <label style="display:block;font-size:0.82rem;font-weight:500;margin-top:16px;margin-bottom:6px;color:var(--md-on-surface-variant);">
+          Allowed Cross-Origin Ports
+        </label>
+        <div class="dialog__input-row">
+          <input class="dialog__input" id="allowedPortInput" type="number" min="1" max="65535"
+                 placeholder="e.g. 3000" autocomplete="off" style="flex:1;">
+          <button class="md-btn" id="allowedPortAdd" type="button">
+            <span class="material-symbols-outlined md-btn__icon">add</span> Add
+          </button>
+        </div>
+        <div id="allowedPortsList" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
+        <div style="margin-top:4px;font-size:0.78rem;color:var(--md-outline);">
+          Web apps served from these ports (on localhost or your LAN IP) may call this server from the browser. Empty = same-origin only. Applies instantly on Save.
+        </div>
+        <label style="display:block;font-size:0.82rem;font-weight:500;margin-top:16px;margin-bottom:6px;color:var(--md-on-surface-variant);">
           Theme
         </label>
         <div class="theme-radio-group" id="themeRadioGroup">
@@ -302,6 +316,10 @@
       <div class="dialog__title">Upload Files</div>
       <div class="dialog__content">
         <div id="uploadFileList" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+        <input class="dialog__input" id="uploadTagInput" style="margin-top:10px;"
+               placeholder="Tag (optional) — applied to all files" autocomplete="off"
+               maxlength="64" list="uploadTagOptions">
+        <datalist id="uploadTagOptions"></datalist>
         <div style="margin-top:8px;font-size:0.78rem;color:var(--md-outline);text-align:center;">
           Original extension is preserved if you change only the name
         </div>

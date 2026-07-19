@@ -1,8 +1,8 @@
 @echo off
 cd /d "%~dp0.."
 
-set /p VERSION="Enter version (default 1.0.3): "
-if "%VERSION%"=="" set VERSION=1.0.3
+set /p VERSION="Enter version (default 1.0.0): "
+if "%VERSION%"=="" set VERSION=1.0.0
 echo Building ImageHosting version %VERSION%
 echo.
 

@@ -1,0 +1,14 @@
+/* ═══════════════════════════════════════════════════════════
+   Material Symbols Outlined — self-hosted (no Google Fonts fetch).
+   Font file: ../fonts/material-symbols-outlined.woff2
+   Variable axes: opsz 20..48, wght 100..700 (FILL 0, GRAD 0).
+   The .material-symbols-outlined utility class lives in base.css.
+   ═══════════════════════════════════════════════════════════ */
+
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url('../fonts/material-symbols-outlined.woff2') format('woff2');
+}

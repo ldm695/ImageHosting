@@ -1,0 +1,259 @@
+/* ═══════════════════════════════════════════════════════════
+   ImageHosting — Image grid, cards, card actions, icon buttons, empty state, toast
+   (Split from style.css; @import'd there. Order preserved for cascade.)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Grid ──────────────────────────────────────── */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+/* ── Card (MD3 Elevated Card) ──────────────────── */
+
+.md-card {
+  position: relative;
+  border-radius: var(--md-shape-sm);
+  background: var(--md-surface-container);
+  box-shadow: var(--md-elevation-1);
+  overflow: hidden;
+  cursor: pointer;
+  transition: all var(--md-motion-standard);
+  animation: mdFadeIn 0.35s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes mdFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.md-card:hover {
+  box-shadow: var(--md-elevation-3);
+  transform: translateY(-2px);
+}
+
+.md-card__media {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: var(--md-surface-container-high);
+  transition: transform var(--md-motion-emphasized);
+}
+
+.md-card:hover .md-card__media {
+  transform: scale(1.02);
+}
+
+.md-card__content {
+  padding: 12px 14px 14px;
+}
+
+.md-card__title {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--md-on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.md-card__subtitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--md-on-surface-variant);
+  font-weight: 400;
+}
+
+/* ── Card Actions (Overlay) ────────────────────── */
+
+.md-card__actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity var(--md-motion-standard);
+}
+
+.md-card:hover .md-card__actions,
+.md-card:focus-within .md-card__actions {
+  opacity: 1;
+}
+
+.selection-mode .md-card__actions {
+  display: none;
+}
+
+/* Selection checkbox on card */
+.md-card__check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--md-shape-full);
+  background: rgba(0,0,0,0.45);
+  border: 2px solid rgba(255,255,255,0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--md-motion-standard);
+  z-index: 2;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.selection-mode .md-card__check {
+  display: flex;
+}
+
+.md-card__check.checked {
+  background: var(--md-primary);
+  border-color: var(--md-primary);
+}
+
+.md-card__check .material-symbols-outlined {
+  font-size: 1.1rem;
+  color: var(--md-on-primary);
+  opacity: 0;
+  transition: opacity var(--md-motion-standard);
+}
+
+.md-card__check.checked .material-symbols-outlined {
+  opacity: 1;
+}
+
+/* Dim unselected cards in selection mode */
+.selection-mode .md-card:not(.selected) .md-card__media {
+  opacity: 0.6;
+}
+
+.selection-mode .md-card.selected {
+  outline: 2px solid var(--md-primary);
+  outline-offset: -2px;
+}
+
+/* ── Icon Button (MD3) ─────────────────────────── */
+
+.md-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: var(--md-shape-full);
+  background: rgba(28, 27, 31, 0.8);
+  color: #fff;
+  cursor: pointer;
+  transition: all var(--md-motion-standard);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.md-icon-btn .material-symbols-outlined {
+  font-size: 1.25rem;
+}
+
+.md-icon-btn:hover {
+  background: rgba(28, 27, 31, 0.95);
+  transform: scale(1.08);
+}
+
+.md-icon-btn:active {
+  transform: scale(0.92);
+}
+
+.md-icon-btn--danger:hover {
+  background: var(--md-error-container);
+  color: var(--md-error);
+}
+
+/* ── Empty State ───────────────────────────────── */
+
+.empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 24px;
+  color: var(--md-on-surface-variant);
+  text-align: center;
+}
+
+.empty-state__icon {
+  font-size: 4rem;
+  margin-bottom: 16px;
+  opacity: 0.25;
+}
+
+.empty-state__icon.material-symbols-outlined {
+  font-size: 4.5rem;
+}
+
+.empty-state__title {
+  font-size: 1.15rem;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: var(--md-on-surface);
+}
+
+.empty-state__desc {
+  font-size: 0.88rem;
+  max-width: 280px;
+  color: var(--md-on-surface-variant);
+}
+
+/* ── Toast (Snackbar — MD3) ────────────────────── */
+
+.snackbar-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.snackbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-radius: var(--md-shape-xs);
+  background: var(--md-surface-container-highest);
+  box-shadow: var(--md-elevation-3);
+  font-size: 0.88rem;
+  font-weight: 400;
+  pointer-events: auto;
+  animation: snackbarIn 0.3s cubic-bezier(0.2, 0, 0, 1);
+  max-width: 400px;
+  border: 1px solid var(--md-outline-variant);
+}
+
+@keyframes snackbarIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.snackbar--success { border-left: 4px solid #4caf7d; }
+.snackbar--error { border-left: 4px solid var(--md-error); }
+.snackbar--info { border-left: 4px solid var(--md-primary); }
+
+.snackbar__icon { font-size: 1.15rem; flex-shrink: 0; }
+.snackbar--success .snackbar__icon { color: #4caf7d; }
+.snackbar--error .snackbar__icon { color: var(--md-error); }
+.snackbar--info .snackbar__icon { color: var(--md-primary); }
+
