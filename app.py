@@ -98,7 +98,13 @@ Config.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
 # Ensure staging dir exists and clean leftover files from last run
 Config.STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
-# Register MIME types
+# Register MIME types.
+# Windows resolves extensions via the registry, which on a fresh install machine
+# may lack these mappings (or map them wrong) — so we register them explicitly to
+# guarantee the correct Content-Type regardless of the host. Without the .svg
+# entry, favicon.svg is served with a wrong/empty type and browsers refuse to
+# render it, so the icon disappears in packaged builds.
+mimetypes.add_type("image/svg+xml", ".svg")
 mimetypes.add_type("image/webp", ".webp")
 mimetypes.add_type("image/avif", ".avif")
 mimetypes.add_type("font/woff2", ".woff2")
