@@ -3,6 +3,7 @@ Utility functions for ImageHosting.
 
 Pure functions that depend only on Config, standard library, and Flask's url_for.
 """
+
 import json
 import os
 import re
@@ -16,6 +17,7 @@ from config import Config
 
 try:
     from PIL import Image
+
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
@@ -26,21 +28,26 @@ except ImportError:
 # ext -> Pillow save format. Shared by thumbnail generation and staging
 # preview so the mapping lives in one place.
 THUMBNAIL_FORMAT_MAP = {
-    '.png': 'PNG', '.jpg': 'JPEG', '.jpeg': 'JPEG',
-    '.gif': 'GIF', '.webp': 'WEBP', '.bmp': 'BMP',
+    ".png": "PNG",
+    ".jpg": "JPEG",
+    ".jpeg": "JPEG",
+    ".gif": "GIF",
+    ".webp": "WEBP",
+    ".bmp": "BMP",
 }
 
 
 # ── Atomic file writes ────────────────────────────
 
-def atomic_write_text(path: Path, text: str, encoding: str = 'utf-8'):
+
+def atomic_write_text(path: Path, text: str, encoding: str = "utf-8"):
     """Write text to `path` atomically.
 
     Writes to a temp file in the same directory then os.replace()s it into
     place, so a crash mid-write can never leave a half-written (corrupt) file.
     """
     path = Path(path)
-    tmp = path.with_name(f'{path.name}.{os.getpid()}.tmp')
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     try:
         tmp.write_text(text, encoding=encoding)
         os.replace(str(tmp), str(path))
@@ -56,7 +63,7 @@ def atomic_write_text(path: Path, text: str, encoding: str = 'utf-8'):
 # ── Tags ──────────────────────────────────────────
 
 TAG_MAX_LEN = 64
-_TAG_PATTERN = re.compile(r'^[\w\s\-]+$')
+_TAG_PATTERN = re.compile(r"^[\w\s\-]+$")
 
 # Serializes the load->modify->write of any group's .tags.json. The dev
 # server runs multithreaded (console mode), so concurrent requests tagging
@@ -70,22 +77,22 @@ def validate_tag(tag: str) -> tuple[bool, str]:
     Rules: non-empty after strip, <= 64 chars, only letters, numbers,
     spaces, hyphens, and underscores.
     """
-    tag = (tag or '').strip()
+    tag = (tag or "").strip()
     if not tag:
-        return False, 'Tag cannot be empty'
+        return False, "Tag cannot be empty"
     if len(tag) > TAG_MAX_LEN:
-        return False, f'Tag must be {TAG_MAX_LEN} characters or fewer'
+        return False, f"Tag must be {TAG_MAX_LEN} characters or fewer"
     if not _TAG_PATTERN.match(tag):
-        return False, 'Tag can only contain letters, numbers, spaces, hyphens, and underscores'
-    return True, ''
+        return False, "Tag can only contain letters, numbers, spaces, hyphens, and underscores"
+    return True, ""
 
 
 def load_tags(group: str = Config.DEFAULT_GROUP) -> dict[str, str]:
     """Load tag mapping from group's .tags.json (filename -> tag)."""
-    tags_file = Config.UPLOAD_DIR / group / '.tags.json'
+    tags_file = Config.UPLOAD_DIR / group / ".tags.json"
     if tags_file.exists():
         try:
-            return json.loads(tags_file.read_text(encoding='utf-8'))
+            return json.loads(tags_file.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
     return {}
@@ -165,7 +172,7 @@ def delete_tag_global(group: str, tag: str) -> int:
 
 def _write_tags(group: str, tags: dict[str, str]):
     """Persist tags to disk. Caller must hold _tags_lock."""
-    tags_file = Config.UPLOAD_DIR / group / '.tags.json'
+    tags_file = Config.UPLOAD_DIR / group / ".tags.json"
     if tags:
         atomic_write_text(
             tags_file,
@@ -185,29 +192,31 @@ def get_local_ip() -> str:
     """Get local LAN IP address"""
     try:
         import socket
+
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.settimeout(0.1)
-            s.connect(('10.255.255.255', 1))
+            s.connect(("10.255.255.255", 1))
             ip = s.getsockname()[0]
         return ip
     except Exception:
-        return '127.0.0.1'
+        return "127.0.0.1"
 
 
 def format_size(size_bytes: int) -> str:
     """Format file size for human reading"""
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
+    size = float(size_bytes)
+    for unit in ["B", "KB", "MB", "GB"]:
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
 
 
 def is_valid_group_name(name: str) -> bool:
     """Validate group name"""
     if not name or len(name) > 64:
         return False
-    return bool(re.match(r'^[a-zA-Z0-9_\-]+$', name))
+    return bool(re.match(r"^[a-zA-Z0-9_\-]+$", name))
 
 
 def generate_thumbnail(src_path: Path, dst_path: Path) -> bool:
@@ -218,17 +227,18 @@ def generate_thumbnail(src_path: Path, dst_path: Path) -> bool:
     if ext not in Config.PILLOW_FORMATS:
         return False
     try:
-        with Image.open(src_path) as img:
-            if img.mode in ('RGBA', 'P'):
-                img = img.convert('RGBA')
+        with Image.open(src_path) as src:
+            img: Image.Image = src
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGBA")
 
-            img.thumbnail(Config.THUMBNAIL_SIZE, Image.LANCZOS)
+            img.thumbnail(Config.THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
 
             out_ext = dst_path.suffix.lower()
-            fmt = THUMBNAIL_FORMAT_MAP.get(out_ext, 'JPEG')
+            fmt = THUMBNAIL_FORMAT_MAP.get(out_ext, "JPEG")
 
-            if fmt == 'JPEG' and img.mode == 'RGBA':
-                img = img.convert('RGB')
+            if fmt == "JPEG" and img.mode == "RGBA":
+                img = img.convert("RGB")
 
             img.save(dst_path, fmt, quality=Config.THUMBNAIL_QUALITY)
             return True
@@ -243,10 +253,10 @@ def load_dims(group: str = Config.DEFAULT_GROUP) -> dict[str, dict]:
     file's byte size when measured — a mismatch means the file changed and
     the cache entry must be recomputed.
     """
-    dims_file = Config.UPLOAD_DIR / group / '.dims.json'
+    dims_file = Config.UPLOAD_DIR / group / ".dims.json"
     if dims_file.exists():
         try:
-            data = json.loads(dims_file.read_text(encoding='utf-8'))
+            data = json.loads(dims_file.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 return data
         except (json.JSONDecodeError, OSError):
@@ -256,7 +266,7 @@ def load_dims(group: str = Config.DEFAULT_GROUP) -> dict[str, dict]:
 
 def write_dims(group: str, dims: dict[str, dict]):
     """Persist the dimension cache to disk (atomic)."""
-    dims_file = Config.UPLOAD_DIR / group / '.dims.json'
+    dims_file = Config.UPLOAD_DIR / group / ".dims.json"
     if dims:
         atomic_write_text(
             dims_file,
@@ -266,9 +276,12 @@ def write_dims(group: str, dims: dict[str, dict]):
         dims_file.unlink()
 
 
-def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP,
-                   tags: dict[str, str] | None = None,
-                   dims_cache: dict[str, dict] | None = None) -> dict | None:
+def get_image_info(
+    filename: str,
+    group: str = Config.DEFAULT_GROUP,
+    tags: dict[str, str] | None = None,
+    dims_cache: dict[str, dict] | None = None,
+) -> dict | None:
     """Get single image metadata (includes tag if set).
 
     Pass a preloaded `tags` mapping to avoid re-reading .tags.json per call
@@ -289,15 +302,17 @@ def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP,
     width = height = None
     if ext in Config.PILLOW_FORMATS and HAS_PIL:
         cached = dims_cache.get(filename) if dims_cache is not None else None
-        if cached and cached.get('size') == stat.st_size:
-            width, height = cached.get('w'), cached.get('h')
+        if cached and cached.get("size") == stat.st_size:
+            width, height = cached.get("w"), cached.get("h")
         else:
             try:
                 with Image.open(filepath) as img:
                     width, height = img.size
                 if dims_cache is not None and width and height:
                     dims_cache[filename] = {
-                        'w': width, 'h': height, 'size': stat.st_size,
+                        "w": width,
+                        "h": height,
+                        "size": stat.st_size,
                     }
             except Exception:
                 pass
@@ -307,21 +322,21 @@ def get_image_info(filename: str, group: str = Config.DEFAULT_GROUP,
         tags = load_tags(group)
 
     info = {
-        'filename': filename,
-        'group': group,
-        'url': url_for('serve_upload', group=group, filename=filename),
-        'thumbnail_url': url_for('serve_thumbnail', group=group, filename=filename),
-        'absolute_path': str(filepath.resolve()),
-        'size': stat.st_size,
-        'formatted_size': format_size(stat.st_size),
-        'created': created_dt.isoformat(),
-        'created_formatted': created_dt.strftime('%Y-%m-%d %H:%M'),
+        "filename": filename,
+        "group": group,
+        "url": url_for("serve_upload", group=group, filename=filename),
+        "thumbnail_url": url_for("serve_thumbnail", group=group, filename=filename),
+        "absolute_path": str(filepath.resolve()),
+        "size": stat.st_size,
+        "formatted_size": format_size(stat.st_size),
+        "created": created_dt.isoformat(),
+        "created_formatted": created_dt.strftime("%Y-%m-%d %H:%M"),
     }
     if width and height:
-        info['width'] = width
-        info['height'] = height
+        info["width"] = width
+        info["height"] = height
     if filename in tags:
-        info['tag'] = tags[filename]
+        info["tag"] = tags[filename]
     return info
 
 
@@ -332,7 +347,7 @@ def scan_images(group: str = Config.DEFAULT_GROUP, tag_filter: str | None = None
     """
     group_dir = Config.UPLOAD_DIR / group
     if not group_dir.exists():
-        return {'images': [], 'tags': []}
+        return {"images": [], "tags": []}
 
     tags = load_tags(group)
     tag_set = set(t for t in tags.values() if t)
@@ -342,8 +357,7 @@ def scan_images(group: str = Config.DEFAULT_GROUP, tag_filter: str | None = None
     present = set()
 
     images = []
-    for f in sorted(group_dir.iterdir(),
-                     key=lambda p: p.stat().st_ctime, reverse=True):
+    for f in sorted(group_dir.iterdir(), key=lambda p: p.stat().st_ctime, reverse=True):
         if f.is_file() and allowed_file(f.name):
             present.add(f.name)
             if tag_filter and tags.get(f.name) != tag_filter:
@@ -363,8 +377,8 @@ def scan_images(group: str = Config.DEFAULT_GROUP, tag_filter: str | None = None
             pass
 
     return {
-        'images': images,
-        'tags': sorted(tag_set),
+        "images": images,
+        "tags": sorted(tag_set),
     }
 
 
@@ -375,16 +389,17 @@ def scan_groups() -> list[dict]:
         if d.is_dir():
             count = 0
             try:
-                count = len([f for f in d.iterdir()
-                            if f.is_file() and allowed_file(f.name)])
+                count = len([f for f in d.iterdir() if f.is_file() and allowed_file(f.name)])
             except Exception:
                 pass
-            groups.append({
-                'name': d.name,
-                'count': count,
-            })
+            groups.append(
+                {
+                    "name": d.name,
+                    "count": count,
+                }
+            )
     # Default group first
-    groups.sort(key=lambda g: (0 if g['name'] == Config.DEFAULT_GROUP else 1, g['name']))
+    groups.sort(key=lambda g: (0 if g["name"] == Config.DEFAULT_GROUP else 1, g["name"]))
     return groups
 
 
@@ -397,9 +412,10 @@ def ensure_group_dirs(group: str):
 def is_port_available(port: int) -> bool:
     """Check if a TCP port is available for binding."""
     import socket
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
-            s.bind(('0.0.0.0', port))
+            s.bind(("0.0.0.0", port))
             return True
         except OSError:
             return False

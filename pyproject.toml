@@ -1,0 +1,23 @@
+[tool.ruff]
+# Runtime targets Python 3.14 (see build notes); keep rewrites conservative.
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes, I: isort, UP: pyupgrade, B: flake8-bugbear
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use long, descriptive assertion lines; don't fight them on width.
+"tests/**" = ["E501"]
+"e2e/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+# Core application modules; tests/e2e rely on dynamic pytest fixtures and are
+# covered by the test suite itself, so they're left out of static typing.
+files = ["app.py", "utils.py", "helpers.py", "config.py", "staging.py", "tray.py", "routes"]
+# Several runtime deps ship no type stubs (pystray, win32, flask_cors, ...).
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true

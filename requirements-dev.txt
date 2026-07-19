@@ -2,6 +2,16 @@
 -r requirements.txt
 pytest>=8.0
 
+# Linter + formatter (ESLint/Prettier equivalent). Config lives in pyproject.toml.
+#   ruff check .          lint
+#   ruff check . --fix    auto-fix
+#   ruff format .         format
+ruff>=0.15
+
+# Static type checker (like TypeScript's tsc). Config in pyproject.toml.
+#   mypy
+mypy>=1.8
+
 # Browser E2E (run: pytest e2e). After install, fetch the browser once:
 #   playwright install chromium
 pytest-playwright>=0.5
