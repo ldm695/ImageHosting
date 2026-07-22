@@ -73,18 +73,29 @@ scripts\build_msi.bat
 Enter version (default 1.0.0):
 ```
 
-脚本会自动完成：PyInstaller → heat → candle → light → 清理中间文件。
+脚本会自动完成：写入 `version.txt` → PyInstaller → heat → candle → light → 清理中间文件。
 最终输出 `dist\ImageHosting-X.X.X.msi`，仅保留 MSI 文件。
+
+输入的版本号会：① 写入 `version.txt` 打进包，运行时显示在网页顶栏（`v1.0.0`）；
+② 作为 MSI 版本用于升级检测。开始菜单的「Uninstall ImageHosting」使用独立图标
+`assets\uninstall.ico`。
+
+图标由 `assets\*.svg` 生成：`python scripts\convert_icons.py`（`app` 主图标 +
+`uninstall` 卸载图标）。改了 SVG 后需重新运行以更新对应 `.ico`。
 
 ### 手动分步
 
 ```bash
+# 0. 写入版本号（build_msi.bat 会用输入的版本号自动生成）
+#    运行时读取此文件显示在顶栏；开发运行无此文件则回退显示局域网地址
+echo|set /p="1.0.0">version.txt
+
 # 1. PyInstaller — 打包为 exe
 rm -rf dist build *.spec
 python -m PyInstaller --onedir --name ImageHosting --icon assets\icon.ico ^
   --add-data "templates;templates" --add-data "static;static" ^
-  --add-data "assets\icon.ico;." --hidden-import PIL --hidden-import pystray ^
-  --noconsole --clean app.py
+  --add-data "assets\icon.ico;." --add-data "version.txt;." ^
+  --hidden-import PIL --hidden-import pystray --noconsole --clean app.py
 
 # 2. 复制图标到输出目录
 copy /Y assets\icon.ico dist\ImageHosting\icon.ico
@@ -323,9 +334,11 @@ ImageHosting/
 ├── pytest.ini              # pytest 配置
 │
 ├── assets/                 # 图标
-│   ├── icon.ico
+│   ├── icon.svg            # 主图标源（像素画）
+│   ├── icon.ico            # 由 convert_icons.py 生成
 │   ├── icon.png
-│   └── picture.svg
+│   ├── uninstall.svg       # 卸载图标源
+│   └── uninstall.ico       # 由 convert_icons.py 生成（开始菜单 Uninstall）
 │
 ├── docs/
 │   ├── api.md              # 完整 API 参考
@@ -335,7 +348,7 @@ ImageHosting/
 │   ├── build.bat
 │   ├── build_msi.bat
 │   ├── installer.wxs
-│   └── convert_icon.py
+│   └── convert_icons.py    # SVG 像素画 → ICO（app / uninstall 图标）
 │
 ├── tests/                  # pytest 套件
 │   ├── conftest.py         # fixtures（隔离临时数据目录、client、上传/暂存助手）
@@ -343,7 +356,8 @@ ImageHosting/
 │   ├── test_utils.py       # 纯函数单测（校验、format_size、原子写、尺寸缓存、helpers）
 │   ├── test_staging.py     # 暂存边界（冲突/上限/group 与 tag 覆盖/预览/幂等取消）
 │   ├── test_settings.py    # 设置校验 + 端口占用 + 仅本机守卫
-│   └── test_images.py      # rename/move/批量/逐文件标签/非 Pillow 格式
+│   ├── test_images.py      # rename/move/批量/逐文件标签/非 Pillow 格式
+│   └── test_convert_icons.py  # 图标 SVG 矩形解析（v 相对 / V 绝对坐标）
 │
 ├── e2e/                    # Playwright 浏览器端到端测试（opt-in）
 │   ├── conftest.py         # live_server（真服务线程）+ 每测试新数据目录

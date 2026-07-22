@@ -16,6 +16,7 @@
              Comments="ImageHosting MSI Installer" />
 
     <Icon Id="appIcon" SourceFile="dist\ImageHosting\icon.ico" />
+    <Icon Id="uninstallIcon.ico" SourceFile="assets\uninstall.ico" />
     <Property Id="ARPPRODUCTICON" Value="appIcon" />
 
     <!-- Detect previous install path from registry -->
@@ -54,7 +55,8 @@
                   Name="Uninstall ImageHosting"
                   Description="Uninstall ImageHosting"
                   Target="[System64Folder]msiexec.exe"
-                  Arguments="/x [ProductCode]" />
+                  Arguments="/x [ProductCode]"
+                  Icon="uninstallIcon.ico" />
         <RemoveFolder Id="RemoveStartMenuDir" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\ImageHosting"
                        Name="installed" Type="integer" Value="1" />

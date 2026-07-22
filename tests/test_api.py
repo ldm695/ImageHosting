@@ -203,3 +203,34 @@ def test_svg_served_with_csp_sandbox(client):
     assert r.status_code == 200
     assert "sandbox" in r.headers.get("Content-Security-Policy", "")
     assert r.headers.get("X-Content-Type-Options") == "nosniff"
+
+
+# ── SVG MIME registration ────────────────────────
+
+
+def test_svg_mimetype_registered():
+    # Packaged builds run on hosts whose registry may lack .svg; app.py forces
+    # the mapping so favicon.svg is served as image/svg+xml (else the icon
+    # vanishes). Guards against that add_type line being dropped.
+    import mimetypes
+
+    assert mimetypes.guess_type("favicon.svg")[0] == "image/svg+xml"
+
+
+# ── Top-bar version vs LAN URL ───────────────────
+
+
+def test_topbar_shows_version_when_set(client, monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "_APP_VERSION", "2.3.1")
+    html = client.get("/").get_data(as_text=True)
+    assert "v2.3.1" in html
+
+
+def test_topbar_falls_back_to_url_without_version(client, monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "_APP_VERSION", "")
+    html = client.get("/").get_data(as_text=True)
+    assert "http://" in html and 'class="access-url"' in html

@@ -7,8 +7,10 @@ if "%VERSION%"=="" set VERSION=1.0.0
 echo Building ImageHosting version %VERSION%
 echo.
 
+<nul set /p ="%VERSION%">"version.txt"
+
 echo [1/5] PyInstaller - bundling app...
-python -m PyInstaller --onedir --name ImageHosting --contents-directory "." --icon "assets\icon.ico" --add-data "templates;templates" --add-data "static;static" --add-data "assets\icon.ico;." --hidden-import PIL --hidden-import pystray --noconsole --clean app.py
+python -m PyInstaller --onedir --name ImageHosting --contents-directory "." --icon "assets\icon.ico" --add-data "templates;templates" --add-data "static;static" --add-data "assets\icon.ico;." --add-data "version.txt;." --hidden-import PIL --hidden-import pystray --noconsole --clean app.py
 if %ERRORLEVEL% neq 0 ( echo FAILED & pause & exit /b 1 )
 echo OK
 
@@ -30,6 +32,7 @@ if %ERRORLEVEL% neq 0 ( echo FAILED & pause & exit /b 1 )
 echo [5/5] Cleaning up intermediate files...
 if exist "build" rmdir /S /Q "build"
 if exist "ImageHosting.spec" del /Q "ImageHosting.spec"
+if exist "version.txt" del /Q "version.txt"
 if exist "dist\ImageHosting" rmdir /S /Q "dist\ImageHosting"
 if exist "dist\ImageHosting.wxs" del /Q "dist\ImageHosting.wxs"
 del /Q "dist\*.wixobj" 2>nul
