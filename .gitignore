@@ -4,6 +4,10 @@ build/
 *.spec
 version.txt
 
+# Large font source (12 MB) — kept locally as the subset_font.py input;
+# only the generated static/fonts/ali_square.woff2 is tracked & shipped.
+assets/ali_square.ttf
+
 # venv
 venv/
 .venv/
