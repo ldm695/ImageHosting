@@ -42,6 +42,11 @@ JOBS = {
     "uninstall": {
         "svg": ROOT / "assets" / "uninstall.svg",
         "ico": ROOT / "assets" / "uninstall.ico",
+        # Extra transparent margin added to the square side (SVG units), split
+        # evenly on all sides — shell icons look better not bled to the edge.
+        # 774 content + 58 => 832 square (~3.5% margin per side). NEAREST-only
+        # pipeline means this adds breathing room, never blur.
+        "pad": 58,
     },
 }
 
@@ -77,17 +82,21 @@ def parse_rects(content: str, asserts: dict):
     return rects
 
 
-def render_square(rects, asserts: dict):
-    """Render rects into a centered RENDER_SIZE square canvas (NEAREST-friendly)."""
+def render_square(rects, asserts: dict, pad: float = 0.0):
+    """Render rects into a centered RENDER_SIZE square canvas (NEAREST-friendly).
+
+    `pad` (SVG units) grows the square beyond the content's larger dimension,
+    yielding a transparent margin split evenly on all sides.
+    """
     min_x = min(r[0] for r in rects)
     min_y = min(r[1] for r in rects)
     max_x = max(r[0] + r[2] for r in rects)
     max_y = max(r[1] + r[3] for r in rects)
     cx, cy = (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
-    sq_side = max(max_x - min_x, max_y - min_y)
+    sq_side = max(max_x - min_x, max_y - min_y) + pad
     scale = RENDER_SIZE / sq_side
     cw, ch = max_x - min_x, max_y - min_y
-    print(f"  {len(rects)} rects, content {cw:.0f}x{ch:.0f}, square {sq_side:.0f}")
+    print(f"  {len(rects)} rects, content {cw:.0f}x{ch:.0f}, square {sq_side:.0f} (pad {pad:.0f})")
 
     img = Image.new("RGBA", (RENDER_SIZE, RENDER_SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -170,7 +179,7 @@ def run_job(name: str, job: dict):
     print(f"[{name}] {job['svg'].name}")
     asserts = job.get("asserts", {})
     rects = parse_rects(job["svg"].read_text(encoding="utf-8"), asserts)
-    img = render_square(rects, asserts)
+    img = render_square(rects, asserts, job.get("pad", 0.0))
 
     if job.get("png"):
         img.resize((256, 256), Image.Resampling.NEAREST).save(job["png"])
