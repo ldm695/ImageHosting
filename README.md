@@ -348,7 +348,8 @@ ImageHosting/
 │   ├── build.bat
 │   ├── build_msi.bat
 │   ├── installer.wxs
-│   └── convert_icons.py    # SVG 像素画 → ICO（app / uninstall 图标）
+│   ├── convert_icons.py    # SVG 像素画 → ICO（app / uninstall 图标）
+│   └── subset_font.py      # ali_square.ttf 裁剪 + 转 woff2（UI 字体）
 │
 ├── tests/                  # pytest 套件
 │   ├── conftest.py         # fixtures（隔离临时数据目录、client、上传/暂存助手）

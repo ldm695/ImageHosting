@@ -2,6 +2,16 @@
    ImageHosting — Material Design 3 (Dark Theme) — Design Tokens
    ═══════════════════════════════════════════════════════════ */
 
+/* Self-hosted UI font. swap (not block) so text shows immediately in a
+   fallback and re-renders once the .ttf arrives — the file is large. */
+@font-face {
+  font-family: 'AliSquare';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/ali_square.woff2') format('woff2');
+}
+
 /* ── Design Tokens ─────────────────────────────── */
 
 :root {
@@ -52,7 +62,7 @@
   --md-motion-decelerate: 0.25s cubic-bezier(0.05, 0.7, 0.1, 1);
 
   /* Typography */
-  --md-font: "Google Sans", "Roboto", "Noto Sans SC", "Microsoft YaHei",
+  --md-font: "AliSquare", "Google Sans", "Roboto", "Noto Sans SC", "Microsoft YaHei",
              -apple-system, BlinkMacSystemFont, sans-serif;
   --md-font-mono: "Google Sans Mono", "SF Mono", "Fira Code", "Consolas", monospace;
 }

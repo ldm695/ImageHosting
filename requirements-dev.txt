@@ -15,3 +15,8 @@ mypy>=1.8
 # Browser E2E (run: pytest e2e). After install, fetch the browser once:
 #   playwright install chromium
 pytest-playwright>=0.5
+
+# Font subsetting + woff2 (run: python scripts/subset_font.py). brotli powers
+# woff2 compression. Only needed to regenerate the UI font, not at runtime.
+fonttools>=4.60
+brotli>=1.1
