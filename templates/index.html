@@ -7,7 +7,7 @@
   <meta name="darkreader-lock">
   <title>{{ title }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/material-symbols.css') }}?v=1">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=6">
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="alternate icon" href="{{ url_for('static', filename='favicon.ico') }}">
 </head>
@@ -24,7 +24,11 @@
         <span class="material-symbols-outlined">settings</span>
       </button>
       <span class="md-chip md-chip--primary">:{{ port }}</span>
+      {% if app_version %}
+      <span class="access-url" title="Version">v{{ app_version }}</span>
+      {% else %}
       <span class="access-url" title="LAN access">http://{{ local_ip }}:{{ port }}</span>
+      {% endif %}
     </div>
   </header>
 
