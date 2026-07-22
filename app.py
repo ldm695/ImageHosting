@@ -126,6 +126,23 @@ from utils import (  # noqa: E402
 _LOCAL_IP = get_local_ip()
 
 
+def _read_app_version() -> str:
+    """Read the build version from the bundled version.txt.
+
+    build_msi.bat writes the version the user typed into version.txt and
+    bundles it via --add-data, so packaged builds surface it. In dev runs the
+    file is absent and we return "" (the top bar then falls back to the URL).
+    """
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    try:
+        return (base / "version.txt").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+_APP_VERSION = _read_app_version()
+
+
 def _allowed_origins() -> set:
     """Build the set of permitted Origin values from the port allowlist."""
     hosts = {"localhost", "127.0.0.1"}
@@ -180,6 +197,7 @@ def _render_index():
         default_group=Config.DEFAULT_GROUP,
         data_dir=str(Config.DATA_DIR),
         theme=getattr(Config, "THEME", "auto"),
+        app_version=_APP_VERSION,
     )
 
 

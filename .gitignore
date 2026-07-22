@@ -2,6 +2,7 @@
 dist/
 build/
 *.spec
+version.txt
 
 # venv
 venv/
