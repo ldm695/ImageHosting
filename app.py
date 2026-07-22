@@ -652,11 +652,18 @@ def _serve_console():
 
 
 def _serve_tray():
-    """Run Flask using make_server (needed for tray restart support)."""
+    """Run Flask using make_server (needed for tray restart support).
+
+    threaded=True is required: make_server defaults to a single-threaded
+    server, so Chrome's speculative pre-connections (up to 6 parallel TCP
+    sockets) occupy the lone worker and starve the real request — the page
+    hangs on "loading". Flask's app.run (console/dev path) already defaults
+    to threaded=True, which is why PyCharm runs work in every browser.
+    """
     from werkzeug.serving import make_server
 
     global _http_server
-    _http_server = make_server(Config.HOST, Config.PORT, app)
+    _http_server = make_server(Config.HOST, Config.PORT, app, threaded=True)
     _http_server.serve_forever()
 
 
