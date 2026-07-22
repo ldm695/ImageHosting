@@ -1828,6 +1828,10 @@
 
   settingsBtn.addEventListener('click', openSettingsDialog);
   settingsCancel.addEventListener('click', closeSettingsDialog);
+  // Click the scrim (outside the card) to dismiss, like the other dialogs.
+  settingsDialog.addEventListener('click', function(e) {
+    if (e.target === settingsDialog) closeSettingsDialog();
+  });
 
   browseBtn.addEventListener('click', async function() {
     browseBtn.disabled = true;

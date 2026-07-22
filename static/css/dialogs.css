@@ -239,11 +239,16 @@
 .dialog-overlay.active { display: flex; }
 
 .dialog {
+  display: flex;
+  flex-direction: column;
   background: var(--md-surface-container-highest);
   border-radius: var(--md-shape-xl);
   padding: 24px 28px 20px;
   max-width: 360px;
   width: 88%;
+  /* Cap to viewport so a tall card (e.g. Settings) can't overflow off-screen;
+     the content area scrolls while title + actions stay pinned. */
+  max-height: 90vh;
   box-shadow: var(--md-elevation-5);
   animation: dialogIn 0.25s cubic-bezier(0.2, 0, 0, 1);
 }
@@ -269,6 +274,16 @@
   color: var(--md-on-surface-variant);
   margin-bottom: 24px;
   line-height: 1.5;
+  /* Scroll the fields when the card is height-capped; title/actions stay put.
+     min-height:0 lets a flex child actually shrink and scroll. */
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.dialog__title,
+.dialog__actions {
+  flex: 0 0 auto;
 }
 
 .dialog__actions {
