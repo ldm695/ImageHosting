@@ -11,7 +11,7 @@ from flask import jsonify, request
 from werkzeug.utils import secure_filename
 
 from config import Config
-from utils import is_valid_group_name
+from utils import ensure_group_dirs, is_valid_group_name
 
 # Loopback addresses that count as "the host machine" for admin endpoints.
 _LOOPBACK_ADDRS = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
@@ -75,3 +75,31 @@ def safe_or_error(filename: str, label: str = "filename"):
     if not safe:
         return None, (jsonify({"error": f"Invalid {label}"}), 400)
     return safe, None
+
+
+def get_request_files(group: str):
+    """Load and validate uploaded files from the current request.
+
+    Creates the group directories and extracts the file list from
+    `request.files`, filtering out empty/unnamed entries.
+
+    Returns ``(files, None)`` on success, or ``(None, error_response)`` on
+    failure (missing files key or no valid files after filtering).
+
+    Usage:
+        files, err = get_request_files(group)
+        if err:
+            return err
+    """
+    ensure_group_dirs(group)
+
+    if "files" not in request.files:
+        return None, (jsonify({"error": "No file data in request"}), 400)
+
+    files = request.files.getlist("files")
+    files = [f for f in files if f and f.filename and f.filename.strip()]
+
+    if not files:
+        return None, (jsonify({"error": "Please select files to upload"}), 400)
+
+    return files, None

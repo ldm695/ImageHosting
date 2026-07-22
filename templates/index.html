@@ -66,7 +66,7 @@
         <div class="search-box" id="searchBox">
           <span class="material-symbols-outlined search-box__icon">search</span>
           <input class="search-box__input" id="searchInput" type="text"
-                 placeholder="Search…" autocomplete="off">
+                 placeholder="Search…" autocomplete="off" aria-label="Search images">
           <button class="search-box__clear" id="searchClear">
             <span class="material-symbols-outlined" style="font-size:0.9rem;">close</span>
           </button>
@@ -150,7 +150,7 @@
         </div>
         <div class="lightbox__tag-editor" id="lbTagEditor" style="display:none;">
           <input class="dialog__input tag-editor__input" id="lbTagInput"
-                 placeholder="Enter tag…" maxlength="64" autocomplete="off">
+                 placeholder="Enter tag…" maxlength="64" autocomplete="off" aria-label="Image tag">
           <div class="tag-editor__suggestions" id="lbTagSuggestions"></div>
           <div class="tag-editor__actions">
             <button class="md-btn" id="lbTagSave">Save</button>
@@ -204,7 +204,7 @@
       <div class="dialog__title">New Group</div>
       <div class="dialog__content">
         <input class="dialog__input" id="newGroupInput"
-               placeholder="Enter group name" maxlength="64" autocomplete="off">
+               placeholder="Enter group name" maxlength="64" autocomplete="off" aria-label="New group name">
         <div style="margin-top:6px;font-size:0.78rem;color:var(--md-outline);">
           Letters, numbers, underscores, hyphens only
         </div>
@@ -224,7 +224,7 @@
     <div class="dialog dialog--wide">
       <div class="dialog__title">Settings</div>
       <div class="dialog__content">
-        <label style="display:block;font-size:0.82rem;font-weight:500;margin-bottom:6px;color:var(--md-on-surface-variant);">
+        <label for="settingsDataDir" style="display:block;font-size:0.82rem;font-weight:500;margin-bottom:6px;color:var(--md-on-surface-variant);">
           Image Storage Root Directory
         </label>
         <div class="dialog__input-row">
@@ -237,7 +237,7 @@
         <div style="margin-top:6px;font-size:0.78rem;color:var(--md-outline);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <span>Changes apply immediately. Existing images are migrated automatically.</span>
         </div>
-        <label style="display:block;font-size:0.82rem;font-weight:500;margin-top:16px;margin-bottom:6px;color:var(--md-on-surface-variant);">
+        <label for="settingsTimeout" style="display:block;font-size:0.82rem;font-weight:500;margin-top:16px;margin-bottom:6px;color:var(--md-on-surface-variant);">
           Staging Timeout (minutes)
         </label>
         <input class="dialog__input" id="settingsTimeout" type="number" min="1" max="60"
@@ -245,27 +245,13 @@
         <div style="margin-top:4px;font-size:0.78rem;color:var(--md-outline);">
           Files not confirmed within this period are automatically discarded.
         </div>
-        <label style="display:block;font-size:0.82rem;font-weight:500;margin-top:16px;margin-bottom:6px;color:var(--md-on-surface-variant);">
+        <label for="settingsPort" style="display:block;font-size:0.82rem;font-weight:500;margin-top:16px;margin-bottom:6px;color:var(--md-on-surface-variant);">
           Server Port
         </label>
         <input class="dialog__input" id="settingsPort" type="number" min="1024" max="65535"
                placeholder="6951" autocomplete="off" style="max-width:120px;">
         <div style="margin-top:4px;font-size:0.78rem;color:var(--md-outline);">
           Changing the port will restart the server automatically.
-        </div>
-        <label style="display:block;font-size:0.82rem;font-weight:500;margin-top:16px;margin-bottom:6px;color:var(--md-on-surface-variant);">
-          Allowed Cross-Origin Ports
-        </label>
-        <div class="dialog__input-row">
-          <input class="dialog__input" id="allowedPortInput" type="number" min="1" max="65535"
-                 placeholder="e.g. 3000" autocomplete="off" style="flex:1;">
-          <button class="md-btn" id="allowedPortAdd" type="button">
-            <span class="material-symbols-outlined md-btn__icon">add</span> Add
-          </button>
-        </div>
-        <div id="allowedPortsList" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
-        <div style="margin-top:4px;font-size:0.78rem;color:var(--md-outline);">
-          Web apps served from these ports (on localhost or your LAN IP) may call this server from the browser. Empty = same-origin only. Applies instantly on Save.
         </div>
         <label style="display:block;font-size:0.82rem;font-weight:500;margin-top:16px;margin-bottom:6px;color:var(--md-on-surface-variant);">
           Theme
@@ -302,7 +288,7 @@
       <div class="dialog__title">Rename Image</div>
       <div class="dialog__content">
         <input class="dialog__input" id="renameInput"
-               placeholder="New filename" maxlength="128" autocomplete="off">
+               placeholder="New filename" maxlength="128" autocomplete="off" aria-label="New filename">
         <div style="margin-top:6px;font-size:0.78rem;color:var(--md-outline);">
           Extension must remain the same
         </div>
@@ -322,7 +308,7 @@
         <div id="uploadFileList" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
         <input class="dialog__input" id="uploadTagInput" style="margin-top:10px;"
                placeholder="Tag (optional) — applied to all files" autocomplete="off"
-               maxlength="64" list="uploadTagOptions">
+               maxlength="64" list="uploadTagOptions" aria-label="Tag for uploaded files">
         <datalist id="uploadTagOptions"></datalist>
         <div style="margin-top:8px;font-size:0.78rem;color:var(--md-outline);text-align:center;">
           Original extension is preserved if you change only the name
@@ -371,7 +357,7 @@
       <div class="dialog__title">Rename Tag</div>
       <div class="dialog__content">
         <input class="dialog__input" id="renameTagInput"
-               placeholder="New tag name" maxlength="64" autocomplete="off">
+               placeholder="New tag name" maxlength="64" autocomplete="off" aria-label="New tag name">
         <div style="margin-top:6px;font-size:0.78rem;color:var(--md-outline);" id="renameTagHint"></div>
       </div>
       <div class="dialog__actions">
@@ -388,7 +374,7 @@
       <div class="dialog__content">
         <div style="font-size:0.88rem;color:var(--md-on-surface-variant);margin-bottom:10px;" id="batchTagCount"></div>
         <input class="dialog__input" id="batchTagInput"
-               placeholder="Enter tag…" maxlength="64" autocomplete="off">
+               placeholder="Enter tag…" maxlength="64" autocomplete="off" aria-label="Tag for selected images">
         <div id="batchTagSuggestions" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
       </div>
       <div class="dialog__actions">
@@ -408,7 +394,7 @@
   </script>
 
   <!-- ═══ App JavaScript ═══ -->
-  <script src="{{ url_for('static', filename='js/app.js') }}?v=1"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=2"></script>
 
 </body>
 </html>

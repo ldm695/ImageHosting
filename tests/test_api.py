@@ -1,5 +1,5 @@
 """End-to-end API tests covering groups, uploads, tags, staging, migration,
-CORS, the local-only guard, and SVG hardening."""
+the local-only guard, and SVG hardening."""
 
 import io
 import json
@@ -166,30 +166,9 @@ def test_admin_endpoint_blocked_from_lan(client):
 
 
 def test_admin_endpoint_allowed_from_loopback(client):
-    # test_client defaults REMOTE_ADDR to 127.0.0.1
-    r = client.put("/api/settings/allowed-ports", json={"allowed_origin_ports": [3000]})
-    assert r.status_code == 200
-
-
-# ── CORS (#allowlist) ────────────────────────────
-
-
-def test_cors_allowed_origin_echoed(client):
-    client.put("/api/settings/allowed-ports", json={"allowed_origin_ports": [3000]})
-    r = client.get("/api/status", headers={"Origin": "http://localhost:3000"})
-    assert r.headers.get("Access-Control-Allow-Origin") == "http://localhost:3000"
-
-
-def test_cors_disallowed_origin_absent(client):
-    client.put("/api/settings/allowed-ports", json={"allowed_origin_ports": [3000]})
-    r = client.get("/api/status", headers={"Origin": "http://localhost:9999"})
-    assert "Access-Control-Allow-Origin" not in r.headers
-
-
-def test_allowed_ports_validation(client):
-    r = client.put("/api/settings/allowed-ports", json={"allowed_origin_ports": [99999]})
-    assert r.status_code == 400
-    r = client.put("/api/settings/allowed-ports", json={"allowed_origin_ports": "nope"})
+    # test_client defaults REMOTE_ADDR to 127.0.0.1; the empty body yields 400
+    # (not 403), which proves the loopback caller passed the local-only guard.
+    r = client.put("/api/settings/port", json={})
     assert r.status_code == 400
 
 
@@ -233,4 +212,5 @@ def test_topbar_falls_back_to_url_without_version(client, monkeypatch):
 
     monkeypatch.setattr(app_module, "_APP_VERSION", "")
     html = client.get("/").get_data(as_text=True)
+    # noinspection HttpUrlsUsage
     assert "http://" in html and 'class="access-url"' in html

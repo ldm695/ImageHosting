@@ -51,15 +51,8 @@ def live_server():
 def fresh_data(tmp_path):
     """Point Config at a fresh per-test data dir (server reads Config live)."""
     base = tmp_path / "data"
-    Config.DATA_DIR = base
-    Config.UPLOAD_DIR = base / "uploads"
-    Config.THUMBNAIL_DIR = base / "thumbnails"
-    Config.STAGING_DIR = base / "staging"
-    Config.ALLOWED_ORIGIN_PORTS = []
-    for d in (Config.UPLOAD_DIR, Config.THUMBNAIL_DIR, Config.STAGING_DIR):
-        d.mkdir(parents=True, exist_ok=True)
-    (Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
-    (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+    Config.set_data_dir(base)
+    Config.ensure_dirs()
     app_module.SETTINGS_FILE = base / "settings.json"
     yield
 

@@ -48,14 +48,25 @@ class Config:
     # ── Groups ─────────────────────────────────────
     DEFAULT_GROUP = "general"
 
-    # ── CORS ────────────────────────────────────────
-    # Cross-origin requests are allowed only from these ports (on localhost /
-    # 127.0.0.1 / the LAN IP). Empty list = same-origin only (most secure).
-    # Evaluated per-request, so changes take effect without a restart.
-    ALLOWED_ORIGIN_PORTS: list = []
-
     # ── Theme ───────────────────────────────────────
     THEME = "auto"  # auto | light | dark
 
     # ── Page ───────────────────────────────────────
     SITE_TITLE = "ImageHosting"
+
+    @classmethod
+    def set_data_dir(cls, base) -> None:
+        """Point DATA_DIR (and the derived upload/thumbnail/staging dirs) at base."""
+        base = Path(base)
+        cls.DATA_DIR = base
+        cls.UPLOAD_DIR = base / "uploads"
+        cls.THUMBNAIL_DIR = base / "thumbnails"
+        cls.STAGING_DIR = base / "staging"
+
+    @classmethod
+    def ensure_dirs(cls) -> None:
+        """Create the storage dirs (plus the default group's) if missing."""
+        for d in (cls.UPLOAD_DIR, cls.THUMBNAIL_DIR, cls.STAGING_DIR):
+            d.mkdir(parents=True, exist_ok=True)
+        (cls.UPLOAD_DIR / cls.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+        (cls.THUMBNAIL_DIR / cls.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)

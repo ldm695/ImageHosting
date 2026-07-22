@@ -106,7 +106,7 @@
   color: var(--md-on-surface-variant);
   font-size: 0.82rem;
   font-weight: 500;
-  font-family: var(--md-font);
+  font-family: var(--md-font), serif;
   cursor: pointer;
   transition: all var(--md-motion-standard);
   white-space: nowrap;

@@ -1,6 +1,7 @@
 """Settings endpoints: validation, port checks, and the local-only guard."""
 
 import socket
+from typing import Any
 
 import pytest
 
@@ -9,7 +10,7 @@ from config import Config
 
 def test_get_settings_shape(client):
     body = client.get("/api/settings").get_json()
-    for key in ("data_dir", "port", "staging_timeout", "theme", "allowed_origin_ports"):
+    for key in ("data_dir", "port", "staging_timeout", "theme"):
         assert key in body
 
 
@@ -117,15 +118,6 @@ def test_data_dir_nonexistent_parent(client):
     assert r.status_code == 400
 
 
-# ── allowed-ports ────────────────────────────────
-
-
-def test_allowed_ports_dedup(client):
-    r = client.put("/api/settings/allowed-ports", json={"allowed_origin_ports": [3000, 3000, 8080]})
-    assert r.status_code == 200
-    assert r.get_json()["allowed_origin_ports"] == [3000, 8080]
-
-
 # ── Local-only guard (parametrized) ──────────────
 
 
@@ -136,13 +128,12 @@ def test_allowed_ports_dedup(client):
         ("post", "/api/settings/browse", None),
         ("put", "/api/settings/data-dir", {"data_dir": "x"}),
         ("put", "/api/settings/port", {"port": 5000}),
-        ("put", "/api/settings/allowed-ports", {"allowed_origin_ports": []}),
         ("delete", "/api/groups/whatever", None),
     ],
 )
 def test_admin_endpoints_blocked_from_lan(client, method, path, payload):
     fn = getattr(client, method)
-    kwargs = {"environ_overrides": {"REMOTE_ADDR": "10.0.0.7"}}
+    kwargs: dict[str, Any] = {"environ_overrides": {"REMOTE_ADDR": "10.0.0.7"}}
     if payload is not None:
         kwargs["json"] = payload
     assert fn(path, **kwargs).status_code == 403

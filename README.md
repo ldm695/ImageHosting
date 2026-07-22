@@ -44,13 +44,12 @@ python app.py --tray                   # 托盘模式运行（打包后默认）
 
 网页端 Settings 对话框支持多项独立配置，每项单独保存，互不干扰：
 
-| 设置项 | 说明 | 生效时机 |
-|--------|------|---------|
-| Image Storage Root Directory | 修改图片存储根目录 | 立即迁移（自动移动文件 + 清理旧目录） |
-| Staging Timeout (minutes) | 暂存确认超时时间 | 立即生效 |
-| Server Port | 服务端口 | 下次启动生效（保存后重启服务器） |
-| Allowed Cross-Origin Ports | 允许跨源访问的端口白名单 | 即时生效（无需重启） |
-| Theme | 主题（自动 / 亮色 / 暗色） | 立即生效 |
+| 设置项                          | 说明               | 生效时机                 |
+|------------------------------|------------------|----------------------|
+| Image Storage Root Directory | 修改图片存储根目录        | 立即迁移（自动移动文件 + 清理旧目录） |
+| Staging Timeout (minutes)    | 暂存确认超时时间         | 立即生效                 |
+| Server Port                  | 服务端口             | 下次启动生效（保存后重启服务器）     |
+| Theme                        | 主题（自动 / 亮色 / 暗色） | 立即生效                 |
 
 > 存储目录、端口、白名单等管理类操作只能从**本机**（宿主机浏览器）调用；局域网其它设备访问这些接口会返回 403。
 
@@ -119,74 +118,65 @@ rm -rf build ImageHosting.spec dist\ImageHosting dist\*.wxs dist\*.wixobj dist\*
 
 ## 安装目录结构
 
-| 路径 | 内容 |
-|------|------|
-| `C:\Program Files (x86)\ImageHosting\` | 程序文件（只读） |
-| `%APPDATA%\ImageHosting\uploads\` | 上传的图片（可读写） |
-| `%APPDATA%\ImageHosting\thumbnails\` | 缩略图缓存 |
-| `%APPDATA%\ImageHosting\staging\` | 暂存区（自动清理） |
-| `%APPDATA%\ImageHosting\settings.json` | 持久化设置 |
+| 路径                                     | 内容         |
+|----------------------------------------|------------|
+| `C:\Program Files (x86)\ImageHosting\` | 程序文件（只读）   |
+| `%APPDATA%\ImageHosting\uploads\`      | 上传的图片（可读写） |
+| `%APPDATA%\ImageHosting\thumbnails\`   | 缩略图缓存      |
+| `%APPDATA%\ImageHosting\staging\`      | 暂存区（自动清理）  |
+| `%APPDATA%\ImageHosting\settings.json` | 持久化设置      |
 
 ## 系统托盘
 
 打包为 `--noconsole` 后，程序后台运行，显示托盘图标。
 
-| 操作 | 行为 |
-|------|------|
-| **左键单击** | 弹出右键菜单 |
-| **左键双击** | 打开浏览器 (`http://localhost:6951`) |
-| **菜单：Open Browser** | 打开浏览器 |
-| **菜单：Restart Server** | 重启 Flask 服务（新端口生效） |
-| **菜单：Exit** | 退出程序 |
+| 操作                    | 行为                              |
+|-----------------------|---------------------------------|
+| **左键单击**              | 弹出右键菜单                          |
+| **左键双击**              | 打开浏览器 (`http://localhost:6951`) |
+| **菜单：Open Browser**   | 打开浏览器                           |
+| **菜单：Restart Server** | 重启 Flask 服务（新端口生效）              |
+| **菜单：Exit**           | 退出程序                            |
 
 ## API 概览
 
-| 方法 | 端点 | 说明 |
-|------|------|------|
-| `GET` | `/` | 主页面 |
-| `GET` | `/api/images?group=general` | 获取分组图片列表 |
-| `POST` | `/api/upload?group=general` | 上传图片（支持重命名） |
-| `POST` | `/api/upload/stage` | 暂存上传（返回 token + 预览 + 预测路径） |
-| `POST` | `/api/upload/confirm` | 确认暂存文件（移入正式目录） |
-| `POST` | `/api/upload/cancel` | 取消暂存（删除临时文件） |
-| `DELETE` | `/api/image/<name>?group=general` | 删除图片 |
-| `PUT` | `/api/image/<name>/rename?group=general` | 重命名图片 |
-| `PUT` | `/api/image/<name>/move?group=general` | 移动图片到其他分组 |
-| `PUT` | `/api/image/<name>/tag?group=general` | 设置图片标签 |
-| `DELETE` | `/api/image/<name>/tag?group=general` | 移除图片标签 |
-| `POST` | `/api/images/batch-delete` | 批量删除 |
-| `POST` | `/api/images/batch-move` | 批量移动 |
-| `POST` | `/api/images/batch-tag` | 批量打标签 |
-| `PUT` | `/api/tags/<tag>?group=general` | 全局重命名标签 |
-| `DELETE` | `/api/tags/<tag>?group=general` | 全局删除标签 |
-| `GET` | `/api/groups` | 获取全部分组 |
-| `POST` | `/api/groups` | 创建分组 |
-| `DELETE` | `/api/groups/<name>` | 删除分组 |
-| `GET` | `/api/settings` | 获取当前设置 |
-| `PUT` | `/api/settings/data-dir` | 修改存储目录（自动迁移） |
-| `PUT` | `/api/settings/staging-timeout` | 修改暂存超时 |
-| `PUT` | `/api/settings/port` | 修改端口（校验占用，下次启动生效） |
-| `PUT` | `/api/settings/allowed-ports` | 设置允许跨源的端口白名单（即时生效） |
-| `PUT` | `/api/settings/theme` | 切换主题（auto / light / dark） |
-| `POST` | `/api/settings/browse` | 打开系统文件夹选择器 |
-| `POST` | `/api/shutdown` | 优雅关闭（托盘使用） |
-| `GET` | `/api/status` | 健康检查 |
+| 方法       | 端点                                       | 说明                         |
+|----------|------------------------------------------|----------------------------|
+| `GET`    | `/`                                      | 主页面                        |
+| `GET`    | `/api/images?group=general`              | 获取分组图片列表                   |
+| `POST`   | `/api/upload?group=general`              | 上传图片（支持重命名）                |
+| `POST`   | `/api/upload/stage`                      | 暂存上传（返回 token + 预览 + 预测路径） |
+| `POST`   | `/api/upload/confirm`                    | 确认暂存文件（移入正式目录）             |
+| `POST`   | `/api/upload/cancel`                     | 取消暂存（删除临时文件）               |
+| `DELETE` | `/api/image/<name>?group=general`        | 删除图片                       |
+| `PUT`    | `/api/image/<name>/rename?group=general` | 重命名图片                      |
+| `PUT`    | `/api/image/<name>/move?group=general`   | 移动图片到其他分组                  |
+| `PUT`    | `/api/image/<name>/tag?group=general`    | 设置图片标签                     |
+| `DELETE` | `/api/image/<name>/tag?group=general`    | 移除图片标签                     |
+| `POST`   | `/api/images/batch-delete`               | 批量删除                       |
+| `POST`   | `/api/images/batch-move`                 | 批量移动                       |
+| `POST`   | `/api/images/batch-tag`                  | 批量打标签                      |
+| `PUT`    | `/api/tags/<tag>?group=general`          | 全局重命名标签                    |
+| `DELETE` | `/api/tags/<tag>?group=general`          | 全局删除标签                     |
+| `GET`    | `/api/groups`                            | 获取全部分组                     |
+| `POST`   | `/api/groups`                            | 创建分组                       |
+| `DELETE` | `/api/groups/<name>`                     | 删除分组                       |
+| `GET`    | `/api/settings`                          | 获取当前设置                     |
+| `PUT`    | `/api/settings/data-dir`                 | 修改存储目录（自动迁移）               |
+| `PUT`    | `/api/settings/staging-timeout`          | 修改暂存超时                     |
+| `PUT`    | `/api/settings/port`                     | 修改端口（校验占用，下次启动生效）          |
+| `PUT`    | `/api/settings/theme`                    | 切换主题（auto / light / dark）  |
+| `POST`   | `/api/settings/browse`                   | 打开系统文件夹选择器                 |
+| `POST`   | `/api/shutdown`                          | 优雅关闭（托盘使用）                 |
+| `GET`    | `/api/status`                            | 健康检查                       |
 
-> **仅本机接口**：`data-dir`、`port`、`allowed-ports`、`browse`、`shutdown`、`DELETE /api/groups/<name>` 只能从本机（loopback）调用，局域网调用返回 403。完整 API 参考见 [`docs/api.md`](docs/api.md)。
+> **仅本机接口**：`data-dir`、`port`、`browse`、`shutdown`、`DELETE /api/groups/<name>` 只能从本机（loopback）调用，局域网调用返回 403。完整 API 参考见 [`docs/api.md`](docs/api.md)。
 
 > 详细暂存 API 参考文档见 [`docs/staging-api.md`](docs/staging-api.md) —— 包含所有请求/响应字段、preview 机制、错误码和 JavaScript 示例。
 
-### 跨源访问（CORS）
+### 访问控制
 
-默认**只允许同源请求**。若要让运行在其它端口的网页（例如 `localhost:3000` 上的前端）从浏览器调用本服务，需先把该端口加入白名单：在 Settings 对话框的 "Allowed Cross-Origin Ports" 中添加，或调用接口：
-
-```bash
-curl -X PUT "http://localhost:6951/api/settings/allowed-ports" \
-  -H "Content-Type: application/json" \
-  -d '{"allowed_origin_ports": [3000, 8080]}'
-```
-
-白名单基于端口，覆盖 `localhost` / `127.0.0.1` / 本机局域网 IP 的 http 与 https 来源，**即时生效、无需重启**。列表为空即仅同源。下面涉及从其它站点发起的示例，都要求来源端口已在白名单内。
+服务默认监听 `0.0.0.0`，**整个局域网都可访问**,应用层不做来源限制。若要限制哪些设备能访问,请用操作系统防火墙(按 IP / 网段放行入站到该端口)。管理类接口仍仅限本机调用(见上表)。
 
 ### 暂存确认示例
 
@@ -275,10 +265,10 @@ fetch('http://192.168.8.146:6951/api/upload?group=wallpapers', {
 });
 ```
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `?group=名称` | 上传到指定分组 | `general` |
-| `filenames`（FormData 字段） | 自定义文件名 JSON 数组 | 使用原始文件名 |
+| 参数                       | 说明             | 默认值       |
+|--------------------------|----------------|-----------|
+| `?group=名称`              | 上传到指定分组        | `general` |
+| `filenames`（FormData 字段） | 自定义文件名 JSON 数组 | 使用原始文件名   |
 
 不传 `group` 时默认上传到 `general` 分组。
 
@@ -319,7 +309,7 @@ curl -X POST "http://localhost:6951/api/images/batch-delete" \
 
 ```
 ImageHosting/
-├── app.py                  # Flask 应用初始化 + CORS + 设置/系统路由 + 静态服务 + 入口
+├── app.py                  # Flask 应用初始化 + 设置/系统路由 + 静态服务 + 入口
 ├── helpers.py              # 纯请求助手（local_only 守卫、group/filename 校验）
 ├── routes/                 # 领域蓝图
 │   ├── __init__.py         # register_blueprints(app)
@@ -353,7 +343,7 @@ ImageHosting/
 │
 ├── tests/                  # pytest 套件
 │   ├── conftest.py         # fixtures（隔离临时数据目录、client、上传/暂存助手）
-│   ├── test_api.py         # 核心：分组/上传/标签/暂存/迁移/CORS/SVG
+│   ├── test_api.py         # 核心：分组/上传/标签/暂存/迁移/SVG
 │   ├── test_utils.py       # 纯函数单测（校验、format_size、原子写、尺寸缓存、helpers）
 │   ├── test_staging.py     # 暂存边界（冲突/上限/group 与 tag 覆盖/预览/幂等取消）
 │   ├── test_settings.py    # 设置校验 + 端口占用 + 仅本机守卫
@@ -386,7 +376,7 @@ ImageHosting/
 
 分两层。都跑在独立的临时数据目录里，不会碰到 `%APPDATA%` 下的真实数据。
 
-**后端（快，默认）** — pytest 回归测试（112 项），覆盖分组 / 上传 / 标签 / 暂存 / 迁移 / 设置校验 / CORS / 仅本机守卫 / SVG 加固等，用 Flask `test_client`，毫秒级。
+**后端（快，默认）** — pytest 回归测试，覆盖分组 / 上传 / 标签 / 暂存 / 迁移 / 设置校验 / 仅本机守卫 / SVG 加固等，用 Flask `test_client`，毫秒级。
 
 **前端 E2E（慢，opt-in）** — `e2e/` 下用 Playwright 驱动真 Chromium 点真 UI（上传出卡片、多选计数、删除、切主题），后台线程起真服务。黑盒，不依赖改 `app.js`。
 

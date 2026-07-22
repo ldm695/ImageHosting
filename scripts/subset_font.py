@@ -20,7 +20,13 @@ Usage:
 
 from pathlib import Path
 
-from fontTools import subset
+try:
+    from fontTools import subset
+except ImportError as _err:
+    raise SystemExit(
+        "fonttools is required to run this script.\n"
+        "Install it with:  pip install fonttools brotli"
+    ) from _err
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "assets" / "ali_square.ttf"

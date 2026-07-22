@@ -11,21 +11,36 @@ import sys
 import threading
 import webbrowser
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-try:
+if TYPE_CHECKING:
+    # Type-check view: the optional deps are always present, so the checker
+    # sees their real module types (not `Module | None`) and doesn't flag
+    # attribute access. The runtime `else` below is what actually executes.
     import pystray
+    from PIL import Image, ImageDraw, ImageFont
     from pystray import MenuItem as Item
 
     HAS_TRAY = True
-except ImportError:
-    HAS_TRAY = False
-
-try:
-    from PIL import Image, ImageDraw, ImageFont
-
     HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
+else:
+    try:
+        import pystray
+        from pystray import MenuItem as Item
+
+        HAS_TRAY = True
+    except ImportError:
+        pystray = None
+        Item = None
+        HAS_TRAY = False
+
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+
+        HAS_PIL = True
+    except ImportError:
+        Image = ImageDraw = ImageFont = None
+        HAS_PIL = False
 
 
 def _create_icon_image() -> "Image.Image":
@@ -94,7 +109,7 @@ def run_tray(get_port, *, server_stopped: threading.Event | None = None):
                 _url_for("/api/shutdown"), data=b"{}", headers={"Content-Type": "application/json"}
             )
             urllib.request.urlopen(req, timeout=3)
-        except Exception:
+        except OSError:
             pass
 
     def action_exit():
@@ -106,7 +121,7 @@ def run_tray(get_port, *, server_stopped: threading.Event | None = None):
                 _url_for("/api/shutdown"), data=b"{}", headers={"Content-Type": "application/json"}
             )
             urllib.request.urlopen(req, timeout=1)
-        except Exception:
+        except OSError:
             pass
         icon.stop()
 

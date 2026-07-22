@@ -1,12 +1,12 @@
 (function() {
   'use strict';
 
-  var AC = window.APP_CONFIG || {};
+  const AC = window.APP_CONFIG || {};
 
   // ── Theme ────────────────────────────────────
 
-  var _themeMode = 'auto';  // auto | light | dark
-  var _systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+  let _themeMode = 'auto';  // auto | light | dark
+  const _systemDark = window.matchMedia('(prefers-color-scheme: dark)');
 
   function resolveTheme(mode) {
     if (mode === 'auto') return _systemDark.matches ? 'dark' : 'light';
@@ -20,7 +20,7 @@
 
   // Apply initial theme immediately — server value first, then localStorage, default auto
   (function() {
-    var init = AC.theme;
+    let init = AC.theme;
     if (!init) {
       try { init = localStorage.getItem('imagehosting_theme'); } catch(e) {}
     }
@@ -34,8 +34,26 @@
 
   // ── State ────────────────────────────────────
 
+  /**
+   * Image metadata as returned by the backend (see get_image_info in utils.py).
+   * @typedef {Object} ImageInfo
+   * @property {string} filename
+   * @property {string} group
+   * @property {string} url
+   * @property {string} thumbnail_url
+   * @property {string} absolute_path
+   * @property {number} size
+   * @property {string} formatted_size
+   * @property {string} created
+   * @property {string} created_formatted
+   * @property {number} [width]
+   * @property {number} [height]
+   * @property {string} [tag]
+   */
+
   const DEFAULT_GROUP = AC.defaultGroup || 'general';
   let currentGroup = DEFAULT_GROUP;
+  /** @type {ImageInfo[]} */
   let images = [];
   let currentIndex = -1;
   let isLoading = false;
@@ -43,6 +61,7 @@
   let selectedSet = new Set();
   let searchQuery = '';
   let pendingUploadFiles = null;
+  /** @type {ImageInfo[]} */
   let allImages = [];
   let sortMode = 'name';
   let sortAsc = true;
@@ -75,7 +94,6 @@
   const lightboxClose = $('lightboxClose');
   const lightboxPrev = $('lightboxPrev');
   const lightboxNext = $('lightboxNext');
-  const lbTagArea = $('lbTagArea');
   const lbTag = $('lbTag');
   const lbTagBtn = $('lbTagBtn');
   const lbTagEditor = $('lbTagEditor');
@@ -164,19 +182,14 @@
   const settingsTimeout = $('settingsTimeout');
   const settingsPort = $('settingsPort');
   const browseBtn = $('browseBtn');
-  const allowedPortInput = $('allowedPortInput');
-  const allowedPortAdd = $('allowedPortAdd');
-  const allowedPortsList = $('allowedPortsList');
 
   let pendingDelete = null;
   let pendingDeleteGroup = null;
   let pendingDeleteTag = null;
-  var _initTheme = 'auto';
+  let _initTheme = 'auto';
   let _initDir = '';
   let _initTimeoutSec = 300;
   let _initPort = 6951;
-  let _allowedPorts = [];
-  let _initAllowedPorts = [];
 
   // ── Snackbar ─────────────────────────────────
 
@@ -216,7 +229,7 @@
   }
 
   function renderGroupMenu(groups) {
-    var html = '';
+    let html = '';
     for (const g of groups) {
       const isActive = g.name === currentGroup;
       const isDefault = g.name === DEFAULT_GROUP;
@@ -243,8 +256,8 @@
     groupMenu.querySelectorAll('.group-select__item').forEach(function(el) {
       el.addEventListener('click', function(e) {
         if (e.target.closest('.group-select__item-delete')) return;
-        var name = el.dataset.group;
-        if (name !== currentGroup) switchGroup(name);
+        const name = el.dataset.group;
+        if (name !== currentGroup) void switchGroup(name);
         closeGroupMenu();
       });
     });
@@ -256,7 +269,7 @@
       });
     });
 
-    var newBtn = groupMenu.querySelector('#groupNewBtn');
+    const newBtn = groupMenu.querySelector('#groupNewBtn');
     if (newBtn) {
       newBtn.addEventListener('click', function() {
         closeGroupMenu();
@@ -281,7 +294,7 @@
     currentGroupLabel.textContent = name;
     closeGroupMenu();
     await loadImages();
-    loadGroups();
+    void loadGroups();
   }
 
   async function createGroup(name) {
@@ -348,7 +361,7 @@
   function openGroupMenu() {
     groupMenu.classList.add('open');
     groupArrow.classList.add('open');
-    loadGroups();
+    void loadGroups();
   }
 
   function closeGroupMenu() {
@@ -378,7 +391,7 @@
 
   createGroupCancel.addEventListener('click', closeCreateGroupDialog);
   createGroupOk.addEventListener('click', async function() {
-    var name = newGroupInput.value.trim();
+    const name = newGroupInput.value.trim();
     if (!name) {
       snackbar('Please enter a group name', 'error');
       return;
@@ -402,7 +415,7 @@
     if (isLoading) return;
     isLoading = true;
     try {
-      var url = '/api/images?group=' + encodeURIComponent(currentGroup);
+      let url = '/api/images?group=' + encodeURIComponent(currentGroup);
       if (tagFilter) url += '&tag=' + encodeURIComponent(tagFilter);
       const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -421,16 +434,16 @@
   // ── Search / Filter ────────────────────────────
 
   function applyFilter() {
-    var q = searchQuery.trim().toLowerCase();
-    var filtered = !q
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = !q
       ? [...allImages]
       : allImages.filter(function(img) {
-          var nameMatch = img.filename.toLowerCase().includes(q);
-          var tagMatch = (img.tag || '').toLowerCase().includes(q);
+          const nameMatch = img.filename.toLowerCase().includes(q);
+          const tagMatch = (img.tag || '').toLowerCase().includes(q);
           return nameMatch || tagMatch;
         });
     filtered.sort(function(a, b) {
-      var cmp;
+      let cmp;
       if (sortMode === 'name') {
         cmp = a.filename.localeCompare(b.filename);
       } else {
@@ -443,13 +456,13 @@
   }
 
   function showSuggestions() {
-    var q = searchInput.value.trim().toLowerCase();
+    const q = searchInput.value.trim().toLowerCase();
     if (!q || allImages.length === 0) {
       searchSuggestions.classList.remove('open');
       return;
     }
 
-    var matches = allImages
+    const matches = allImages
       .filter(function(img) { return img.filename.toLowerCase().includes(q); })
       .slice(0, 10);
 
@@ -458,10 +471,10 @@
       return;
     }
 
-    var re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-    var html = '';
+    const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    let html = '';
     for (const m of matches) {
-      var highlighted = m.filename.replace(re, '<mark>$1</mark>');
+      const highlighted = m.filename.replace(re, '<mark>$1</mark>');
       html += '\
         <div class="search-suggestion" data-filename="' + m.filename + '">\
           <span class="material-symbols-outlined suggestion-icon">image</span>\
@@ -498,17 +511,17 @@
   });
 
   searchInput.addEventListener('keydown', function(e) {
-    var suggestions = searchSuggestions.querySelectorAll('.search-suggestion');
+    const suggestions = searchSuggestions.querySelectorAll('.search-suggestion');
     if (!suggestions.length) return;
 
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      var active = searchSuggestions.querySelector('.search-suggestion.active');
-      var next;
+      const active = searchSuggestions.querySelector('.search-suggestion.active');
+      let next;
       if (!active) {
         next = e.key === 'ArrowDown' ? suggestions[0] : suggestions[suggestions.length - 1];
       } else {
-        var idx = Array.from(suggestions).indexOf(active);
+        const idx = Array.from(suggestions).indexOf(active);
         next = e.key === 'ArrowDown'
           ? suggestions[Math.min(idx + 1, suggestions.length - 1)]
           : suggestions[Math.max(idx - 1, 0)];
@@ -519,7 +532,7 @@
     }
 
     if (e.key === 'Enter') {
-      var activeEnter = searchSuggestions.querySelector('.search-suggestion.active');
+      const activeEnter = searchSuggestions.querySelector('.search-suggestion.active');
       if (activeEnter) {
         e.preventDefault();
         searchInput.value = activeEnter.dataset.filename;
@@ -548,7 +561,7 @@
 
   // ── Sort ───────────────────────────────────────
 
-  var SORT_OPTIONS = [
+  const SORT_OPTIONS = [
     { mode: 'name', asc: true, label: 'Name A–Z', icon: 'sort_by_alpha' },
     { mode: 'name', asc: false, label: 'Name Z–A', icon: 'sort_by_alpha' },
     { mode: 'time', asc: false, label: 'Newest first', icon: 'schedule' },
@@ -557,7 +570,7 @@
 
   function renderSortMenu() {
     sortMenu.innerHTML = SORT_OPTIONS.map(function(opt) {
-      var active = opt.mode === sortMode && opt.asc === sortAsc;
+      const active = opt.mode === sortMode && opt.asc === sortAsc;
       return '\
         <div class="sort-select__item ' + (active ? 'active' : '') + '"\
              data-mode="' + opt.mode + '" data-asc="' + opt.asc + '">\
@@ -604,7 +617,7 @@
   // ── Tag Filter (multi-select dropdown) ────────
 
   function renderTagChips() {
-    var hasTags = allTags.length > 0;
+    const hasTags = allTags.length > 0;
     tagSelect.style.display = hasTags ? '' : 'none';
     manageTagsBtn.style.display = hasTags ? '' : 'none';
 
@@ -613,13 +626,13 @@
     tagSelectLabel.textContent = tagFilter || 'Tags';
     tagSelectCount.textContent = allTags.length ? '(' + allTags.length + ')' : '';
 
-    var menuHTML = '';
+    let menuHTML = '';
     if (tagFilter) {
       menuHTML += '<div class="tag-select__item" data-tag=""><span class="tag-select__item-text">All tags</span></div>';
       menuHTML += '<div class="tag-select__divider"></div>';
     }
     allTags.forEach(function(t) {
-      var active = tagFilter === t;
+      const active = tagFilter === t;
       menuHTML += '\
         <div class="tag-select__item' + (active ? ' active' : '') + '" data-tag="' + t + '">\
           <span class="tag-radio"></span>\
@@ -648,11 +661,10 @@
   tagTrigger.addEventListener('click', toggleTagMenu);
 
   tagMenu.addEventListener('click', function(e) {
-    var item = e.target.closest('.tag-select__item');
+    const item = e.target.closest('.tag-select__item');
     if (!item) return;
-    var t = item.dataset.tag || null;
-    tagFilter = t;
-    loadImages();
+    tagFilter = item.dataset.tag || null;
+    void loadImages();
     closeTagMenu();
   });
 
@@ -662,20 +674,20 @@
 
   // Tag chip click on cards — set filter to that tag
   grid.addEventListener('click', function(e) {
-    var chip = e.target.closest('.tag-chip--card');
+    const chip = e.target.closest('.tag-chip--card');
     if (!chip) return;
     e.stopPropagation();
-    var t = chip.dataset.tag;
+    const t = chip.dataset.tag;
     tagFilter = tagFilter === t ? null : t;
-    loadImages();
+    void loadImages();
   });
 
   // ── Manage Tags ────────────────────────────────
 
-  var _renameTagPending = null;
+  let _renameTagPending = null;
 
   function openManageTags() {
-    var html = '';
+    let html = '';
     allTags.forEach(function(t) {
       html += '\
         <div class="manage-tag-row">\
@@ -686,11 +698,10 @@
           <button class="md-btn md-btn--danger md-btn--tag-delete" data-tag="' + t + '">Delete</button>\
         </div>';
       // Count images with this tag
-      var count = allImages.filter(function(img) { return img.tag === t; }).length;
-      var countEl = document.getElementById('mtCount_' + t);
+      const count = allImages.filter(function(img) { return img.tag === t; }).length;
       // Deferred count fill
       setTimeout(function() {
-        var el = document.getElementById('mtCount_' + t);
+        const el = document.getElementById('mtCount_' + t);
         if (el) el.textContent = count + ' image' + (count !== 1 ? 's' : '');
       }, 10);
     });
@@ -701,8 +712,8 @@
     // Fill counts
     setTimeout(function() {
       allTags.forEach(function(t) {
-        var count = allImages.filter(function(img) { return img.tag === t; }).length;
-        var el = document.getElementById('mtCount_' + t);
+        const count = allImages.filter(function(img) { return img.tag === t; }).length;
+        const el = document.getElementById('mtCount_' + t);
         if (el) el.textContent = count + ' image' + (count !== 1 ? 's' : '');
       });
     }, 50);
@@ -720,9 +731,9 @@
 
   // Rename / Delete buttons in manage dialog
   manageTagsList.addEventListener('click', function(e) {
-    var btn = e.target.closest('[data-tag]');
+    const btn = e.target.closest('[data-tag]');
     if (!btn) return;
-    var t = btn.dataset.tag;
+    const t = btn.dataset.tag;
 
     if (btn.classList.contains('md-btn--tag-rename')) {
       _renameTagPending = t;
@@ -754,7 +765,7 @@
 
   renameTagOk.addEventListener('click', async function() {
     if (!_renameTagPending) return;
-    var newTag = renameTagInput.value.trim();
+    const newTag = renameTagInput.value.trim();
     if (!newTag) { snackbar('Please enter a tag name', 'error'); return; }
     if (newTag === _renameTagPending) {
       renameTagDialog.classList.remove('active');
@@ -773,7 +784,7 @@
       _renameTagPending = null;
       // Update active filter if it was the renamed tag
       if (tagFilter === data.old_tag) tagFilter = data.new_tag;
-      loadImages();
+      void loadImages();
       closeManageTags();
     } catch (err) { snackbar('Rename failed: ' + err.message, 'error'); }
   });
@@ -790,27 +801,28 @@
 
     if (images.length === 0) {
       emptyState.style.display = 'flex';
-      var total = allImages.length;
+      const total = allImages.length;
       imageCount.innerHTML = total > 0 ? '<strong>0</strong> / ' + total + ' images' : '<strong>0</strong> images';
       return;
     }
 
     emptyState.style.display = 'none';
-    var totalAll = allImages.length;
-    var filtered = searchQuery ? '<strong>' + images.length + '</strong> / ' + totalAll + ' images' : '<strong>' + images.length + '</strong> images';
-    imageCount.innerHTML = filtered;
+    const totalAll = allImages.length;
+    imageCount.innerHTML = searchQuery
+      ? '<strong>' + images.length + '</strong> / ' + totalAll + ' images'
+      : '<strong>' + images.length + '</strong> images';
 
     images.forEach(function(img, index) {
-      var card = document.createElement('div');
+      const card = document.createElement('div');
       card.className = 'md-card';
       card.style.animationDelay = ((index % 24) * 40) + 'ms';
 
-      var sizeLabel = img.width && img.height
+      const sizeLabel = img.width && img.height
         ? img.width + '×' + img.height + ' · ' + img.formatted_size
         : img.formatted_size;
 
-      card.dataset.index = index;
-      var tagBadge = img.tag
+      card.dataset.index = String(index);
+      const tagBadge = img.tag
         ? '<span class="tag-chip tag-chip--card" data-tag="' + img.tag + '">' + img.tag + '</span>'
         : '';
 
@@ -819,8 +831,7 @@
           <span class="material-symbols-outlined">check</span>\
         </div>\
         <img class="md-card__media" src="' + img.thumbnail_url + '"\
-             alt="' + img.filename + '" loading="lazy"\
-             onerror="this.src=\'' + img.url + '\'">\
+             alt="' + img.filename + '" loading="lazy">\
         <div class="md-card__content">\
           <div class="md-card__title" title="' + img.filename + '">' + img.filename + '</div>\
           <div class="md-card__subtitle">\
@@ -838,6 +849,14 @@
           </button>\
         </div>';
 
+      // Fall back to the full-size image if the thumbnail fails to load.
+      // `once` prevents a loop if the fallback itself errors.
+      const media = card.querySelector('.md-card__media');
+      if (media) {
+        const fullUrl = img.url;
+        media.addEventListener('error', function() { media.src = fullUrl; }, { once: true });
+      }
+
       card.addEventListener('click', function(e) {
         if (e.target.closest('.md-card__actions')) return;
         if (isSelectMode) {
@@ -853,10 +872,10 @@
 
   // Card action buttons (copy / delete) — delegated, registered once.
   grid.addEventListener('click', function iconBtnHandler(e) {
-    var btn = e.target.closest('.md-icon-btn');
+    const btn = e.target.closest('.md-icon-btn');
     if (!btn) return;
-    var action = btn.dataset.action;
-    var idx = parseInt(btn.dataset.index, 10);
+    const action = btn.dataset.action;
+    const idx = parseInt(btn.dataset.index, 10);
     if (action === 'copy' && images[idx]) copyLink(idx);
     if (action === 'delete' && images[idx]) promptDelete(idx);
   });
@@ -867,13 +886,13 @@
     if (!files || files.length === 0) return;
     pendingUploadFiles = Array.from(files);
 
-    var html = '';
-    for (var i = 0; i < files.length; i++) {
-      var f = files[i];
+    let html = '';
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
       if (!f || !f.name) continue;
-      var ext = f.name.lastIndexOf('.') > 0 ? f.name.slice(f.name.lastIndexOf('.')) : '';
-      var base = ext ? f.name.slice(0, f.name.lastIndexOf('.')) : f.name;
-      var safeName = escapeHtml(f.name);
+      const ext = f.name.lastIndexOf('.') > 0 ? f.name.slice(f.name.lastIndexOf('.')) : '';
+      const base = ext ? f.name.slice(0, f.name.lastIndexOf('.')) : f.name;
+      const safeName = escapeHtml(f.name);
       html += '\
         <div class="upload-file-row">\
           <span class="material-symbols-outlined file-icon">image</span>\
@@ -885,9 +904,9 @@
     }
     uploadFileList.innerHTML = html;
     // Reset tag field and populate suggestions from existing tags
-    var uploadTagInput = $('uploadTagInput');
+    const uploadTagInput = $('uploadTagInput');
     if (uploadTagInput) uploadTagInput.value = '';
-    var uploadTagOptions = $('uploadTagOptions');
+    const uploadTagOptions = $('uploadTagOptions');
     if (uploadTagOptions) {
       uploadTagOptions.innerHTML = allTags.map(function(t) {
         return '<option value="' + t + '"></option>';
@@ -896,7 +915,7 @@
     uploadRenameOk.textContent = 'Upload (' + files.length + ' file' + (files.length > 1 ? 's' : '') + ')';
     uploadRenameDialog._customNames = null;
     uploadRenameDialog.classList.add('active');
-    var first = uploadFileList.querySelector('.dialog__input');
+    const first = uploadFileList.querySelector('.dialog__input');
     if (first) setTimeout(function() { first.focus(); }, 150);
   }
 
@@ -911,14 +930,14 @@
   });
 
   uploadRenameOk.addEventListener('click', function() {
-    var files = pendingUploadFiles;
+    const files = pendingUploadFiles;
     if (!files || files.length === 0) return;
 
-    var customNames = [];
+    const customNames = [];
     uploadFileList.querySelectorAll('.dialog__input').forEach(function(inp) {
-      var val = inp.value.trim();
-      var ext = inp.dataset.ext || '';
-      var idx = parseInt(inp.dataset.idx, 10);
+      const val = inp.value.trim();
+      const ext = inp.dataset.ext || '';
+      const idx = parseInt(inp.dataset.idx, 10);
       if (val) {
         customNames.push(val + ext);
       } else {
@@ -926,11 +945,11 @@
       }
     });
 
-    var tagInput = $('uploadTagInput');
-    var uploadTag = tagInput ? tagInput.value.trim() : '';
+    const tagInput = $('uploadTagInput');
+    const uploadTag = tagInput ? tagInput.value.trim() : '';
 
     closeUploadRenameDialog();
-    uploadFiles(files, customNames, uploadTag);
+    void uploadFiles(files, customNames, uploadTag);
   });
 
   // ── Upload ────────────────────────────────────
@@ -938,8 +957,8 @@
   async function uploadFiles(files, customNames, tag) {
     if (!files || files.length === 0) return;
 
-    var formData = new FormData();
-    for (var fi = 0; fi < files.length; fi++) {
+    const formData = new FormData();
+    for (let fi = 0; fi < files.length; fi++) {
       formData.append('files', files[fi]);
     }
     if (customNames && customNames.length > 0) {
@@ -967,7 +986,7 @@
             catch (e) { reject(new Error('Failed to parse response')); }
           } else {
             try {
-              var errData = JSON.parse(xhr.responseText);
+              const errData = JSON.parse(xhr.responseText);
               reject(new Error(errData.error || 'HTTP ' + xhr.status));
             } catch (e) {
               reject(new Error('Upload failed (HTTP ' + xhr.status + ')'));
@@ -991,7 +1010,7 @@
       }
 
       await loadImages();
-      loadGroups();
+      void loadGroups();
 
     } catch (err) {
       snackbar('Upload failed: ' + err.message, 'error');
@@ -1035,10 +1054,10 @@
   function openLightbox(index) {
     if (index < 0 || index >= images.length) return;
     currentIndex = index;
-    var img = images[index];
+    const img = images[index];
     lightboxImg.src = img.url;
     lbFilename.textContent = img.filename;
-    var dims = img.width && img.height ? img.width + '×' + img.height + ' · ' : '';
+    const dims = img.width && img.height ? img.width + '×' + img.height + ' · ' : '';
     lbMeta.textContent = dims + img.formatted_size + ' · ' + img.created_formatted;
     lightbox.classList.add('active');
     document.body.style.overflow = 'hidden';
@@ -1057,7 +1076,7 @@
   }
 
   function navLightbox(delta) {
-    var idx = currentIndex + delta;
+    const idx = currentIndex + delta;
     if (idx >= 0 && idx < images.length) {
       openLightbox(idx);
     }
@@ -1086,7 +1105,7 @@
   // ── Lightbox Tag ──────────────────────────────
 
   function updateLbTag() {
-    var img = images[currentIndex];
+    const img = images[currentIndex];
     if (!img) return;
     if (img.tag) {
       lbTag.textContent = img.tag;
@@ -1102,12 +1121,12 @@
 
   lbTagBtn.addEventListener('click', function() {
     if (currentIndex < 0) return;
-    var img = images[currentIndex];
+    const img = images[currentIndex];
     lbTagInput.value = img.tag || '';
     lbTagEditor.style.display = '';
 
     // Build suggestion list from existing tags
-    var html = '';
+    let html = '';
     allTags.forEach(function(t) {
       html += '<div class="tag-suggestion' + (t === img.tag ? ' active' : '') + '" data-tag="' + t + '">' + t + '</div>';
     });
@@ -1119,16 +1138,16 @@
   });
 
   lbTagInput.addEventListener('input', function() {
-    var val = lbTagInput.value.trim().toLowerCase();
-    var items = lbTagSuggestions.querySelectorAll('.tag-suggestion');
+    const val = lbTagInput.value.trim().toLowerCase();
+    const items = lbTagSuggestions.querySelectorAll('.tag-suggestion');
     items.forEach(function(el) {
-      var match = !val || el.dataset.tag.toLowerCase().includes(val);
+      const match = !val || el.dataset.tag.toLowerCase().includes(val);
       el.style.display = match ? '' : 'none';
     });
   });
 
   lbTagSuggestions.addEventListener('click', function(e) {
-    var el = e.target.closest('.tag-suggestion');
+    const el = e.target.closest('.tag-suggestion');
     if (!el) return;
     lbTagInput.value = el.dataset.tag;
     lbTagSuggestions.style.display = 'none';
@@ -1137,8 +1156,8 @@
 
   lbTagSave.addEventListener('click', async function() {
     if (currentIndex < 0) return;
-    var img = images[currentIndex];
-    var tag = lbTagInput.value.trim();
+    const img = images[currentIndex];
+    const tag = lbTagInput.value.trim();
     if (!tag) return;
 
     try {
@@ -1160,7 +1179,7 @@
 
   lbTagClear.addEventListener('click', async function() {
     if (currentIndex < 0) return;
-    var img = images[currentIndex];
+    const img = images[currentIndex];
     try {
       const res = await fetch(
         '/api/image/' + encodeURIComponent(img.filename) + '/tag?group=' + encodeURIComponent(currentGroup),
@@ -1196,12 +1215,12 @@
 
   lbRename.addEventListener('click', function() {
     if (currentIndex < 0) return;
-    var img = images[currentIndex];
+    const img = images[currentIndex];
     renameInput.value = img.filename;
     renameDialog.classList.add('active');
     setTimeout(function() {
       renameInput.focus();
-      var dot = img.filename.lastIndexOf('.');
+      const dot = img.filename.lastIndexOf('.');
       if (dot > 0) renameInput.setSelectionRange(0, dot);
     }, 150);
   });
@@ -1216,8 +1235,8 @@
 
   renameOk.addEventListener('click', async function() {
     if (currentIndex < 0) return;
-    var img = images[currentIndex];
-    var newName = renameInput.value.trim();
+    const img = images[currentIndex];
+    const newName = renameInput.value.trim();
     if (!newName) {
       snackbar('Please enter a filename', 'error');
       return;
@@ -1249,22 +1268,22 @@
       if (data.info && currentIndex >= 0) {
         images[currentIndex] = data.info;
         lbFilename.textContent = data.info.filename;
-        var dims = data.info.width && data.info.height
+        const dims = data.info.width && data.info.height
           ? data.info.width + '×' + data.info.height + ' · ' : '';
         lbMeta.textContent = dims + data.info.formatted_size + ' · ' + data.info.created_formatted;
         lightboxImg.src = data.info.url;
       }
-      var newFilename = data.filename;
+      const newFilename = data.filename;
       await loadImages();
-      var foundIdx = images.findIndex(function(x) { return x.filename === newFilename; });
+      const foundIdx = images.findIndex(function(x) { return x.filename === newFilename; });
       if (foundIdx >= 0) currentIndex = foundIdx;
       if (foundIdx >= 0 && images[foundIdx]) {
-        var info = images[foundIdx];
+        const info = images[foundIdx];
         lbFilename.textContent = info.filename;
         lbMeta.textContent = (info.width ? info.width + '×' + info.height + ' · ' : '') + info.formatted_size + ' · ' + info.created_formatted;
         lightboxImg.src = info.url;
       }
-      loadGroups();
+      void loadGroups();
     } catch (err) {
       snackbar('Rename failed: ' + err.message, 'error');
     } finally {
@@ -1282,7 +1301,7 @@
 
   lbMove.addEventListener('click', function() {
     if (currentIndex < 0) return;
-    var img = images[currentIndex];
+    const img = images[currentIndex];
     moveFilenameLabel.textContent = img.filename;
     buildMoveGroupList();
     moveDialog._batchMode = false;
@@ -1294,10 +1313,10 @@
       .then(function(r) { return r.json(); })
       .then(function(groups) {
         moveGroupList.innerHTML = '';
-        var selected = null;
+        let selected = null;
         groups.forEach(function(g) {
           if (g.name === currentGroup) return;
-          var item = document.createElement('div');
+          const item = document.createElement('div');
           item.className = 'group-radio-item';
           item.dataset.group = g.name;
           item.innerHTML = '\
@@ -1312,7 +1331,7 @@
           });
           moveGroupList.appendChild(item);
         });
-        var first = moveGroupList.querySelector('.group-radio-item');
+        const first = moveGroupList.querySelector('.group-radio-item');
         if (first) first.classList.add('selected');
       })
       .catch(function(err) { snackbar('Failed to load groups: ' + err.message, 'error'); });
@@ -1327,19 +1346,19 @@
   });
 
   moveOk.addEventListener('click', async function() {
-    var selected = moveGroupList.querySelector('.group-radio-item.selected');
+    const selected = moveGroupList.querySelector('.group-radio-item.selected');
     if (!selected) {
       snackbar('Please select a target group', 'error');
       return;
     }
-    var toGroup = selected.dataset.group;
+    const toGroup = selected.dataset.group;
 
     moveOk.disabled = true;
     moveOk.textContent = 'Moving…';
 
     try {
       if (moveDialog._batchMode) {
-        var names = [...selectedSet].map(function(i) { return images[i].filename; });
+        const names = [...selectedSet].map(function(i) { return images[i].filename; });
         const res = await fetch('/api/images/batch-move', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1356,10 +1375,10 @@
         moveDialog.classList.remove('active');
         exitSelectMode();
         await loadImages();
-        loadGroups();
+        void loadGroups();
       } else {
         if (currentIndex < 0) return;
-        var img = images[currentIndex];
+        const img = images[currentIndex];
         const res = await fetch(
           '/api/image/' + encodeURIComponent(img.filename) + '/move?group=' + encodeURIComponent(currentGroup),
           {
@@ -1377,7 +1396,7 @@
         moveDialog.classList.remove('active');
         closeLightbox();
         await loadImages();
-        loadGroups();
+        void loadGroups();
       }
     } catch (err) {
       snackbar('Move failed: ' + err.message, 'error');
@@ -1419,18 +1438,18 @@
 
   function updateSelectUI() {
     grid.querySelectorAll('.md-card__check').forEach(function(el) {
-      var idx = parseInt(el.dataset.check, 10);
+      const idx = parseInt(el.dataset.check, 10);
       el.classList.toggle('checked', selectedSet.has(idx));
     });
     grid.querySelectorAll('.md-card').forEach(function(el) {
-      var idx = parseInt(el.dataset.index, 10);
+      const idx = parseInt(el.dataset.index, 10);
       el.classList.toggle('selected', selectedSet.has(idx));
     });
     updateSelectCount();
   }
 
   function updateSelectCount() {
-    var count = selectedSet.size;
+    const count = selectedSet.size;
     selectCount.textContent = count + ' selected';
     batchMoveBtn.style.display = count > 0 ? '' : 'none';
     batchTagBtn.style.display = count > 0 ? '' : 'none';
@@ -1451,7 +1470,7 @@
 
   batchDeleteBtn.addEventListener('click', function() {
     if (selectedSet.size === 0) return;
-    var names = [...selectedSet].map(function(i) { return images[i].filename; });
+    const names = [...selectedSet].map(function(i) { return images[i].filename; });
     confirmText.textContent = 'Delete ' + names.length + ' selected image(s)? This cannot be undone.';
     pendingDelete = 'batch';
     confirmDialog.classList.add('active');
@@ -1461,12 +1480,12 @@
 
   batchTagBtn.addEventListener('click', function() {
     if (selectedSet.size === 0) return;
-    var count = selectedSet.size;
+    const count = selectedSet.size;
     batchTagCount.textContent = 'Set a tag for ' + count + ' selected image(s):';
     batchTagInput.value = '';
 
     // Build suggestion chips from existing tags
-    var html = '';
+    let html = '';
     allTags.forEach(function(t) {
       html += '<span class="tag-chip tag-suggestion-chip" data-tag="' + t + '">' + t + '</span>';
     });
@@ -1486,17 +1505,17 @@
 
   // Click suggestion chip to fill input
   batchTagSuggestions.addEventListener('click', function(e) {
-    var chip = e.target.closest('.tag-suggestion-chip');
+    const chip = e.target.closest('.tag-suggestion-chip');
     if (!chip) return;
     batchTagInput.value = chip.dataset.tag;
     batchTagInput.focus();
   });
 
   batchTagOk.addEventListener('click', async function() {
-    var tag = batchTagInput.value.trim();
+    const tag = batchTagInput.value.trim();
     if (!tag) { snackbar('Please enter a tag', 'error'); return; }
 
-    var names = [...selectedSet].map(function(i) { return images[i].filename; });
+    const names = [...selectedSet].map(function(i) { return images[i].filename; });
 
     batchTagOk.disabled = true;
     batchTagOk.textContent = 'Applying…';
@@ -1517,7 +1536,7 @@
       }
       batchTagDialog.classList.remove('active');
       exitSelectMode();
-      loadImages();
+      void loadImages();
     } catch (err) {
       snackbar('Batch tag failed: ' + err.message, 'error');
     } finally {
@@ -1542,7 +1561,7 @@
   // ── Copy Link ─────────────────────────────────
 
   function fallbackCopy(text) {
-    var ta = document.createElement('textarea');
+    const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
@@ -1550,6 +1569,8 @@
     document.body.appendChild(ta);
     ta.select();
     try {
+      // Required fallback: navigator.clipboard is unavailable over plain HTTP (non-secure context).
+      //noinspection JSDeprecatedSymbols
       document.execCommand('copy');
       snackbar('Link copied', 'success');
     } catch (_e) {
@@ -1569,7 +1590,7 @@
   }
 
   function copyLink(idx) {
-    var img = images[idx];
+    const img = images[idx];
     if (!img) return;
     copyText(img.url, ' URL');
   }
@@ -1577,9 +1598,9 @@
   document.querySelectorAll('[data-format]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       if (currentIndex < 0) return;
-      var img = images[currentIndex];
-      var fmt = btn.dataset.format;
-      var text, label;
+      const img = images[currentIndex];
+      const fmt = btn.dataset.format;
+      let text, label;
       if (fmt === 'markdown') {
         text = '![](' + img.url + ')';
         label = ' Markdown link';
@@ -1597,7 +1618,7 @@
   // ── Delete Image ──────────────────────────────
 
   function promptDelete(index) {
-    var img = images[index];
+    const img = images[index];
     if (!img) return;
     pendingDelete = index;
     confirmText.textContent = 'Delete "' + img.filename + '"? This cannot be undone.';
@@ -1612,7 +1633,7 @@
 
   confirmOk.addEventListener('click', async function() {
     if (pendingDelete === 'batch') {
-      var names = [...selectedSet].map(function(i) { return images[i].filename; });
+      const names = [...selectedSet].map(function(i) { return images[i].filename; });
       confirmDialog.classList.remove('active');
       pendingDelete = null;
       try {
@@ -1630,13 +1651,13 @@
         }
         exitSelectMode();
         await loadImages();
-        loadGroups();
+        void loadGroups();
       } catch (err) {
         snackbar('Batch delete failed: ' + err.message, 'error');
       }
     } else if (pendingDelete !== null) {
-      var idx = pendingDelete;
-      var img = images[idx];
+      const idx = pendingDelete;
+      const img = images[idx];
       confirmDialog.classList.remove('active');
       pendingDelete = null;
 
@@ -1652,7 +1673,7 @@
           snackbar('Deleted', 'success');
           if (currentIndex === idx) closeLightbox();
           await loadImages();
-          loadGroups();
+          void loadGroups();
         } else {
           snackbar('Delete failed: ' + (data.error || 'Unknown error'), 'error');
         }
@@ -1660,12 +1681,12 @@
         snackbar('Delete failed: ' + err.message, 'error');
       }
     } else if (pendingDeleteGroup !== null) {
-      var name = pendingDeleteGroup;
+      const name = pendingDeleteGroup;
       confirmDialog.classList.remove('active');
       pendingDeleteGroup = null; pendingDeleteTag = null;
       await deleteGroup(name);
     } else if (pendingDeleteTag !== null) {
-      var t = pendingDeleteTag;
+      const t = pendingDeleteTag;
       confirmDialog.classList.remove('active');
       pendingDeleteTag = null;
       try {
@@ -1675,7 +1696,7 @@
         snackbar('Tag "' + t + '" removed from ' + data.removed + ' image(s)', 'success');
         closeManageTags();
         if (tagFilter === t) tagFilter = null;
-        loadImages();
+        void loadImages();
       } catch (err) { snackbar('Failed: ' + err.message, 'error'); }
     }
   });
@@ -1714,9 +1735,6 @@
       _initDir = data.data_dir || '';
       _initTimeoutSec = data.staging_timeout || 300;
       _initPort = data.port || 6951;
-      _allowedPorts = Array.isArray(data.allowed_origin_ports) ? data.allowed_origin_ports.slice() : [];
-      _initAllowedPorts = _allowedPorts.slice();
-      renderAllowedPorts();
       setThemeRadio(_initTheme);
     } catch (_e) {
       settingsDataDir.value = AC.dataDir || '';
@@ -1726,9 +1744,6 @@
       _initDir = AC.dataDir || '';
       _initTimeoutSec = 300;
       _initPort = 6951;
-      _allowedPorts = [];
-      _initAllowedPorts = [];
-      renderAllowedPorts();
       setThemeRadio(_initTheme);
     }
     settingsDialog.classList.add('active');
@@ -1740,64 +1755,16 @@
     settingsError.style.display = 'none';
   }
 
-  // ── Allowed Cross-Origin Ports ────────────────
-
-  function renderAllowedPorts() {
-    if (_allowedPorts.length === 0) {
-      allowedPortsList.innerHTML = '<span style="font-size:0.78rem;color:var(--md-outline);">None (same-origin only)</span>';
-      return;
-    }
-    allowedPortsList.innerHTML = _allowedPorts.map(function(p) {
-      return '<span class="tag-chip" data-port="' + p + '" style="display:inline-flex;align-items:center;gap:4px;">' +
-        p + '<span class="material-symbols-outlined allowed-port-remove" data-port="' + p +
-        '" style="font-size:1rem;cursor:pointer;">close</span></span>';
-    }).join('');
-  }
-
-  function addAllowedPort() {
-    var val = parseInt(allowedPortInput.value, 10);
-    if (!val || val < 1 || val > 65535) {
-      snackbar('Enter a port between 1 and 65535', 'error');
-      return;
-    }
-    if (_allowedPorts.indexOf(val) === -1) {
-      _allowedPorts.push(val);
-      _allowedPorts.sort(function(a, b) { return a - b; });
-      renderAllowedPorts();
-    }
-    allowedPortInput.value = '';
-    allowedPortInput.focus();
-  }
-
-  allowedPortAdd.addEventListener('click', addAllowedPort);
-  allowedPortInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); addAllowedPort(); }
-  });
-  allowedPortsList.addEventListener('click', function(e) {
-    var btn = e.target.closest('.allowed-port-remove');
-    if (!btn) return;
-    var p = parseInt(btn.dataset.port, 10);
-    _allowedPorts = _allowedPorts.filter(function(x) { return x !== p; });
-    renderAllowedPorts();
-  });
-
-  function samePorts(a, b) {
-    if (a.length !== b.length) return false;
-    var sa = [...a].sort(function(x, y) { return x - y; });
-    var sb = [...b].sort(function(x, y) { return x - y; });
-    return sa.every(function(v, i) { return v === sb[i]; });
-  }
-
   function setThemeRadio(value) {
-    var radios = document.getElementsByName('theme');
-    for (var i = 0; i < radios.length; i++) {
+    const radios = document.getElementsByName('theme');
+    for (let i = 0; i < radios.length; i++) {
       radios[i].checked = radios[i].value === value;
     }
   }
 
   function getThemeRadio() {
-    var radios = document.getElementsByName('theme');
-    for (var i = 0; i < radios.length; i++) {
+    const radios = document.getElementsByName('theme');
+    for (let i = 0; i < radios.length; i++) {
       if (radios[i].checked) return radios[i].value;
     }
     return 'auto';
@@ -1805,7 +1772,7 @@
 
   // Theme radio: save instantly on change (no need to click Save)
   document.getElementById('themeRadioGroup').addEventListener('change', async function() {
-    var theme = getThemeRadio();
+    const theme = getThemeRadio();
     applyTheme(theme);
     localStorage.setItem('imagehosting_theme', theme);
     _initTheme = theme;
@@ -1853,18 +1820,16 @@
   });
 
   settingsSave.addEventListener('click', async function() {
-    var dir = settingsDataDir.value.trim();
-    var timeoutMin = settingsTimeout.value.trim();
-    var timeoutSec = timeoutMin ? parseInt(timeoutMin, 10) * 60 : null;
-    var portVal = settingsPort.value.trim();
-    var newPort = portVal ? parseInt(portVal, 10) : null;
+    const dir = settingsDataDir.value.trim();
+    const timeoutMin = settingsTimeout.value.trim();
+    const timeoutSec = timeoutMin ? parseInt(timeoutMin, 10) * 60 : null;
+    const portVal = settingsPort.value.trim();
+    const newPort = portVal ? parseInt(portVal, 10) : null;
 
-    var dirChanged = dir && dir !== _initDir;
-    var timeoutChanged = timeoutSec !== null && timeoutSec !== _initTimeoutSec;
-    var portChanged = newPort !== null && newPort !== _initPort;
-    var allowedPortsChanged = !samePorts(_allowedPorts, _initAllowedPorts);
-
-    if (!dirChanged && !timeoutChanged && !portChanged && !allowedPortsChanged) {
+    const dirChanged = dir && dir !== _initDir;
+    const timeoutChanged = timeoutSec !== null && timeoutSec !== _initTimeoutSec;
+    const portChanged = newPort !== null && newPort !== _initPort;
+    if (!dirChanged && !timeoutChanged && !portChanged) {
       showSettingsError('Nothing to update');
       return;
     }
@@ -1873,7 +1838,7 @@
     settingsSave.disabled = true;
     settingsSave.textContent = 'Saving…';
 
-    var hasError = false;
+    let hasError = false;
 
     if (dirChanged) {
       try {
@@ -1889,7 +1854,7 @@
         } else {
           snackbar(data.message || 'Directory updated', 'success');
           await loadImages();
-          loadGroups();
+          void loadGroups();
         }
       } catch (err) {
         showSettingsError('Directory save failed: ' + err.message);
@@ -1937,27 +1902,6 @@
       }
     }
 
-    if (allowedPortsChanged && !hasError) {
-      try {
-        const res = await fetch('/api/settings/allowed-ports', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ allowed_origin_ports: _allowedPorts }),
-        });
-        const data = await res.json();
-        if (data.error) {
-          showSettingsError('Allowed ports: ' + data.error);
-          hasError = true;
-        } else {
-          _initAllowedPorts = _allowedPorts.slice();
-          snackbar('Allowed cross-origin ports updated', 'success');
-        }
-      } catch (err) {
-        showSettingsError('Allowed ports save failed: ' + err.message);
-        hasError = true;
-      }
-    }
-
     if (!hasError) {
       closeSettingsDialog();
     }
@@ -1981,7 +1925,7 @@
 
   // ── Init ──────────────────────────────────────
 
-  loadGroups();
-  loadImages();
+  void loadGroups();
+  void loadImages();
 
 })();

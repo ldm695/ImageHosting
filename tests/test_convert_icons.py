@@ -3,7 +3,7 @@
 The pixel-art SVGs encode each rectangle as `M{x} {y} h{w} {v|V}{n} h{-w} z`.
 Lowercase `v` is a relative height; uppercase `V` is an absolute y (so the
 height is `n - y`). A v-only parser silently mis-reads `V` as a giant
-rectangle — the exact bug that stretched the uninstall icon — so these tests
+rectangle — the exact bug that stretched the uninstallation icon — so these tests
 pin the distinction down.
 """
 
@@ -27,8 +27,8 @@ def test_relative_v_used_as_height():
     assert rects == [(10.0, 20.0, 30.0, 40.0, "#112233")]
 
 
-def test_absolute_V_height_is_target_minus_y():
-    # V552 from y=492.45 must yield height 59.55, NOT 552.
+def test_absolute_v_height_is_target_minus_y():
+    # Absolute `V` command: V552 from y=492.45 must yield height 59.55, NOT 552.
     svg = _svg('<path d="M100 492.45h59.56V552h-59.56z" fill="#333333"></path>')
     rects = convert_icons.parse_rects(svg, {})
     assert len(rects) == 1

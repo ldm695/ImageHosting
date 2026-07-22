@@ -101,7 +101,7 @@
 
 .upload-progress__fill {
   height: 100%;
-  width: 0%;
+  width: 0;
   background: var(--md-primary);
   border-radius: 2px;
   transition: width 0.3s ease;
@@ -150,7 +150,9 @@
   user-select: none;
 }
 
-.sort-select__trigger {
+/* Sort- and tag-select triggers share identical styling (see Tag Select). */
+.sort-select__trigger,
+.tag-select__trigger {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -162,13 +164,14 @@
   color: var(--md-on-surface-variant);
   font-size: 0.8rem;
   font-weight: 500;
-  font-family: var(--md-font);
+  font-family: var(--md-font), serif;
   cursor: pointer;
   transition: all var(--md-motion-standard);
   white-space: nowrap;
 }
 
-.sort-select__trigger:hover {
+.sort-select__trigger:hover,
+.tag-select__trigger:hover {
   background: var(--md-surface-container-high);
   border-color: var(--md-outline);
 }
@@ -257,27 +260,8 @@
   flex-shrink: 0;
 }
 
-.tag-select__trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 34px;
-  padding: 0 8px 0 10px;
-  border-radius: var(--md-shape-lg);
-  border: 1px solid var(--md-outline-variant);
-  background: var(--md-surface-container);
-  color: var(--md-on-surface-variant);
-  font-size: 0.8rem;
-  font-weight: 500;
-  font-family: var(--md-font);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all var(--md-motion-standard);
-}
-.tag-select__trigger:hover {
-  background: var(--md-surface-container-high);
-  border-color: var(--md-outline);
-}
+/* .tag-select__trigger + :hover share the grouped rule in the Sort Selector
+   section above (identical styling). */
 
 .tag-select__icon {
   font-size: 1.05rem;
@@ -632,7 +616,7 @@
   background: var(--md-surface-container);
   color: var(--md-on-surface);
   font-size: 0.82rem;
-  font-family: var(--md-font);
+  font-family: var(--md-font), serif;
   outline: none;
   transition: all var(--md-motion-standard);
   width: 160px;
@@ -1058,7 +1042,7 @@
   color: var(--md-on-surface);
   font-size: 0.88rem;
   font-weight: 500;
-  font-family: var(--md-font);
+  font-family: var(--md-font), serif;
   cursor: pointer;
   transition: all var(--md-motion-standard);
   white-space: nowrap;
@@ -1229,7 +1213,7 @@
   background: var(--md-surface);
   color: var(--md-on-surface);
   font-size: 0.95rem;
-  font-family: var(--md-font);
+  font-family: var(--md-font), serif;
   outline: none;
   transition: border-color var(--md-motion-standard);
 }

@@ -7,7 +7,7 @@ Both project icons are pixel-art built from axis-aligned rectangles written as
 it works for icon.svg (all `v`) and uninstall.svg (mixes in `V`).
 
 Each icon is a JOBS entry; per-job `asserts` guard the shapes we expect (the
-main icon has a fixed path/rect/pixel count, the uninstall icon does not).
+main icon has a fixed path/rect/pixel count, the uninstallation icon does not).
 
 Usage:
     python scripts/convert_icons.py            # all jobs
@@ -93,7 +93,7 @@ def render_square(rects, asserts: dict, pad: float = 0.0):
     max_x = max(r[0] + r[2] for r in rects)
     max_y = max(r[1] + r[3] for r in rects)
     cx, cy = (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
-    sq_side = max(max_x - min_x, max_y - min_y) + pad
+    sq_side = float(max(max_x - min_x, max_y - min_y)) + pad
     scale = RENDER_SIZE / sq_side
     cw, ch = max_x - min_x, max_y - min_y
     print(f"  {len(rects)} rects, content {cw:.0f}x{ch:.0f}, square {sq_side:.0f} (pad {pad:.0f})")

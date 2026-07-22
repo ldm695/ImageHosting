@@ -10,17 +10,27 @@ import re
 import threading
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from flask import url_for
 
 from config import Config
 
-try:
+if TYPE_CHECKING:
+    # Type-check view: PIL is always present, so the checker sees its real
+    # type (not `Image | None`) and doesn't flag attribute access. The runtime
+    # `else` below is what actually executes.
     from PIL import Image
 
     HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
+else:
+    try:
+        from PIL import Image
+
+        HAS_PIL = True
+    except ImportError:
+        Image = None
+        HAS_PIL = False
 
 
 # ── Shared constants ──────────────────────────────
@@ -55,7 +65,7 @@ def atomic_write_text(path: Path, text: str, encoding: str = "utf-8"):
         # Best-effort cleanup of the temp file on failure.
         try:
             tmp.unlink(missing_ok=True)
-        except Exception:
+        except OSError:
             pass
         raise
 
@@ -198,7 +208,7 @@ def get_local_ip() -> str:
             s.connect(("10.255.255.255", 1))
             ip = s.getsockname()[0]
         return ip
-    except Exception:
+    except OSError:
         return "127.0.0.1"
 
 
@@ -226,6 +236,9 @@ def generate_thumbnail(src_path: Path, dst_path: Path) -> bool:
     ext = src_path.suffix.lower()
     if ext not in Config.PILLOW_FORMATS:
         return False
+    # Broad by design: any decode/save failure (incl. PIL DecompressionBombError,
+    # which is not an OSError) must just yield False, never crash the caller.
+    # noinspection PyBroadException
     try:
         with Image.open(src_path) as src:
             img: Image.Image = src
@@ -305,6 +318,9 @@ def get_image_info(
         if cached and cached.get("size") == stat.st_size:
             width, height = cached.get("w"), cached.get("h")
         else:
+            # Broad by design: probing dimensions is best-effort; any PIL decode
+            # failure (incl. DecompressionBombError, not an OSError) is skipped.
+            # noinspection PyBroadException
             try:
                 with Image.open(filepath) as img:
                     width, height = img.size
@@ -373,7 +389,7 @@ def scan_images(group: str = Config.DEFAULT_GROUP, tag_filter: str | None = None
     if json.dumps(dims_cache, sort_keys=True) != dims_before:
         try:
             write_dims(group, dims_cache)
-        except Exception:
+        except OSError:
             pass
 
     return {
@@ -385,12 +401,13 @@ def scan_images(group: str = Config.DEFAULT_GROUP, tag_filter: str | None = None
 def scan_groups() -> list[dict]:
     """Scan all groups (subdirectories), sorted default first then alpha"""
     groups = []
+    d: Path
     for d in sorted(Config.UPLOAD_DIR.iterdir()):
         if d.is_dir():
             count = 0
             try:
                 count = len([f for f in d.iterdir() if f.is_file() and allowed_file(f.name)])
-            except Exception:
+            except OSError:
                 pass
             groups.append(
                 {

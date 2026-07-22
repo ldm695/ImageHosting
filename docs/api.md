@@ -2,9 +2,9 @@
 
 Base URL: `http://<host>:<port>`
 
-**CORS:** cross-origin browser requests are rejected by default (same-origin only). To allow other origins, add their ports via `PUT /api/settings/allowed-ports` — the check is evaluated per request, so changes apply without a restart.
+**Access control:** the server binds `0.0.0.0` (LAN-reachable) and does not filter callers by address at the app layer. To restrict which devices can reach it, use the OS firewall. Administrative endpoints are still host-only (below).
 
-**Host-only endpoints:** administrative / destructive endpoints may only be called from the host machine (loopback: `127.0.0.1` / `::1`). A LAN client calling them gets `403 {"error": "This action is only allowed from the host machine"}`. These are: `POST /api/shutdown`, `POST /api/settings/browse`, `PUT /api/settings/data-dir`, `PUT /api/settings/port`, `PUT /api/settings/allowed-ports`, and `DELETE /api/groups/<name>`.
+**Host-only endpoints:** administrative / destructive endpoints may only be called from the host machine (loopback: `127.0.0.1` / `::1`). A LAN client calling them gets `403 {"error": "This action is only allowed from the host machine"}`. These are: `POST /api/shutdown`, `POST /api/settings/browse`, `PUT /api/settings/data-dir`, `PUT /api/settings/port`, and `DELETE /api/groups/<name>`.
 
 **Served images:** every image response carries `X-Content-Type-Options: nosniff`. SVGs additionally get `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` so an uploaded SVG can't run scripts if opened directly.
 
@@ -60,7 +60,7 @@ Upload images. Supports single or multiple files.
 **Response:**
 ```json
 {
-  "uploaded": [{ "filename": "cat.png", ... }],
+  "uploaded": [{ "filename": "cat.png", "...": "..." }],
   "errors": [{ "filename": "bad.exe", "error": "Unsupported format..." }]
 }
 ```
@@ -205,8 +205,7 @@ Delete a group and all its images (cannot delete `general`).
   "data_dir": "C:\\Users\\...\\AppData\\Roaming\\ImageHosting",
   "port": 6951,
   "staging_timeout": 300,
-  "theme": "auto",
-  "allowed_origin_ports": [3000, 8080]
+  "theme": "auto"
 }
 ```
 
@@ -224,12 +223,6 @@ Change staging timeout (seconds, 10–3600).
 
 Change port (takes effect on next restart). Returns `400` if the port is already in use or out of range (1024–65535).  
 **Body:** `{ "port": 8080 }`
-
-### PUT /api/settings/allowed-ports
-
-Set the CORS origin port allowlist. Applies immediately — **no restart**. Persisted to `settings.json`. Each port permits browser requests from `http(s)://{localhost|127.0.0.1|LAN-IP}:{port}`. An empty list means same-origin only.  
-**Body:** `{ "allowed_origin_ports": [3000, 8080] }`  
-Returns `400` for a non-list value or any port outside 1–65535.
 
 ### PUT /api/settings/theme
 

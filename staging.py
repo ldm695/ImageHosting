@@ -20,6 +20,7 @@ from werkzeug.utils import secure_filename
 
 from app import app  # Flask instance for route registration
 from config import Config
+from helpers import get_request_files
 from utils import (
     THUMBNAIL_FORMAT_MAP,
     allowed_file,
@@ -36,6 +37,18 @@ from utils import (
 
 _staging_timers: dict[str, threading.Timer] = {}
 _staging_lock = threading.Lock()
+
+
+def clear_all_timers() -> None:
+    """Cancel and drop every pending staging timer.
+
+    Public entry point for resetting staging state (e.g. between tests) so
+    callers don't reach into the module-private timer dict directly.
+    """
+    with _staging_lock:
+        for timer in _staging_timers.values():
+            timer.cancel()
+        _staging_timers.clear()
 
 
 # ── Helpers ──────────────────────────────────────
@@ -79,7 +92,7 @@ def _remove_staged(token: str):
         staged_file = Config.STAGING_DIR / f"{token}_{meta['safe_name']}"
         staged_file.unlink(missing_ok=True)
         meta_path.unlink()
-    except Exception:
+    except (OSError, ValueError, KeyError):
         pass
 
 
@@ -105,8 +118,24 @@ def cleanup_all_staging():
         try:
             if f.is_file():
                 f.unlink()
-        except Exception:
+        except OSError:
             pass
+
+
+def _parse_token_request():
+    """Extract and validate the staging token from the JSON request body.
+
+    Returns (token, data, error). When error is not None it is a ready-to-return
+    (response, status) tuple and the caller should return it immediately.
+    Shared by the confirm and cancel endpoints.
+    """
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token", "") or "").strip()
+    if not token:
+        return "", data, (jsonify({"error": "Token is required"}), 400)
+    if not re.fullmatch(r"[0-9a-f]{32}", token):
+        return "", data, (jsonify({"error": "Invalid token format"}), 400)
+    return token, data, None
 
 
 # ── Preview ──────────────────────────────────────
@@ -115,6 +144,10 @@ def cleanup_all_staging():
 def _generate_preview(file_path: Path) -> str | None:
     """Generate a base64 data URL preview thumbnail for a staged image."""
     ext = file_path.suffix.lower()
+    # Broad by design: preview is optional and must never break staging. PIL can
+    # raise many types (e.g. DecompressionBombError, which is not an OSError) and
+    # this runs unwrapped in the stage handler, so anything escaping would 500 it.
+    # noinspection PyBroadException
     try:
         if ext in Config.PILLOW_FORMATS:
             from PIL import Image
@@ -151,16 +184,10 @@ def api_upload_stage():
     group = request.args.get("group", Config.DEFAULT_GROUP)
     if not is_valid_group_name(group):
         return jsonify({"error": "Invalid group name"}), 400
-    ensure_group_dirs(group)
 
-    if "files" not in request.files:
-        return jsonify({"error": "No file data in request"}), 400
-
-    files = request.files.getlist("files")
-    files = [f for f in files if f and f.filename and f.filename.strip()]
-
-    if not files:
-        return jsonify({"error": "Please select files to upload"}), 400
+    files, err = get_request_files(group)
+    if err:
+        return err
 
     # Only process the first file (single-file staging)
     file = files[0]
@@ -257,14 +284,9 @@ def api_upload_stage():
 @app.route("/api/upload/confirm", methods=["POST"])
 def api_upload_confirm():
     """Confirm a staged upload — move from staging to final location."""
-    data = request.get_json(silent=True) or {}
-    token = (data.get("token", "") or "").strip()
-
-    if not token:
-        return jsonify({"error": "Token is required"}), 400
-
-    if not re.fullmatch(r"[0-9a-f]{32}", token):
-        return jsonify({"error": "Invalid token format"}), 400
+    token, data, err = _parse_token_request()
+    if err:
+        return err
 
     meta_path = Config.STAGING_DIR / f"{token}.meta.json"
     if not meta_path.exists():
@@ -272,7 +294,7 @@ def api_upload_confirm():
 
     try:
         meta = _StagingMeta.from_dict(json.loads(meta_path.read_text(encoding="utf-8")))
-    except Exception:
+    except (OSError, ValueError, KeyError):
         return jsonify({"error": "Failed to read staging metadata"}), 500
 
     # Determine target group (request overrides original)
@@ -315,7 +337,7 @@ def api_upload_confirm():
     # Clean up metadata
     try:
         meta_path.unlink()
-    except Exception:
+    except OSError:
         pass
 
     # Generate thumbnail
@@ -339,14 +361,9 @@ def api_upload_confirm():
 @app.route("/api/upload/cancel", methods=["POST"])
 def api_upload_cancel():
     """Cancel a staged upload — remove staged file and metadata."""
-    data = request.get_json(silent=True) or {}
-    token = (data.get("token", "") or "").strip()
-
-    if not token:
-        return jsonify({"error": "Token is required"}), 400
-
-    if not re.fullmatch(r"[0-9a-f]{32}", token):
-        return jsonify({"error": "Invalid token format"}), 400
+    token, _data, err = _parse_token_request()
+    if err:
+        return err
 
     # Cancel timer
     with _staging_lock:

@@ -28,35 +28,22 @@ _DEFAULT_STAGING_MAX_FILES = Config.STAGING_MAX_FILES
 def isolate(tmp_path):
     """Point Config + settings file at a fresh per-test directory.
 
-    Also clears any staged-upload timers left over from a previous test so
-    the module-global `_staging_timers` dict can't leak state (it survives
-    across tests otherwise, which would skew the MAX_FILES limit).
+    Also clears any staged-upload timers left over from a previous test via
+    staging.clear_all_timers(), since they otherwise survive across tests and
+    would skew the MAX_FILES limit.
     """
     base = tmp_path / "data"
-    Config.DATA_DIR = base
-    Config.UPLOAD_DIR = base / "uploads"
-    Config.THUMBNAIL_DIR = base / "thumbnails"
-    Config.STAGING_DIR = base / "staging"
-    Config.ALLOWED_ORIGIN_PORTS = []
+    Config.set_data_dir(base)
     Config.STAGING_TIMEOUT = _DEFAULT_STAGING_TIMEOUT
     Config.STAGING_MAX_FILES = _DEFAULT_STAGING_MAX_FILES
-    for d in (Config.UPLOAD_DIR, Config.THUMBNAIL_DIR, Config.STAGING_DIR):
-        d.mkdir(parents=True, exist_ok=True)
-    (Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
-    (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+    Config.ensure_dirs()
     app_module.SETTINGS_FILE = base / "settings.json"
 
-    with staging_module._staging_lock:
-        for t in staging_module._staging_timers.values():
-            t.cancel()
-        staging_module._staging_timers.clear()
+    staging_module.clear_all_timers()
 
     yield
 
-    with staging_module._staging_lock:
-        for t in staging_module._staging_timers.values():
-            t.cancel()
-        staging_module._staging_timers.clear()
+    staging_module.clear_all_timers()
 
 
 @pytest.fixture()

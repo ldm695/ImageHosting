@@ -12,6 +12,10 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from werkzeug.serving import BaseWSGIServer
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 from werkzeug.utils import secure_filename
@@ -66,9 +70,7 @@ def _apply_persisted_settings(persisted: dict):
     """Apply values loaded from settings.json onto Config at startup."""
     # data_dir and port honor CLI overrides, so they stay explicit.
     if "data_dir" in persisted and not _has_cli_arg("--data-dir"):
-        Config.DATA_DIR = Path(persisted["data_dir"])
-        Config.UPLOAD_DIR = Config.DATA_DIR / "uploads"
-        Config.THUMBNAIL_DIR = Config.DATA_DIR / "thumbnails"
+        Config.set_data_dir(persisted["data_dir"])
     if "port" in persisted and not _has_cli_arg("--port"):
         Config.PORT = int(persisted["port"])
 
@@ -76,11 +78,6 @@ def _apply_persisted_settings(persisted: dict):
     for key, attr, coerce in (
         ("staging_timeout", "STAGING_TIMEOUT", int),
         ("theme", "THEME", str),
-        (
-            "allowed_origin_ports",
-            "ALLOWED_ORIGIN_PORTS",
-            lambda v: [int(p) for p in v] if isinstance(v, list) else Config.ALLOWED_ORIGIN_PORTS,
-        ),
     ):
         if key in persisted:
             setattr(Config, attr, coerce(persisted[key]))
@@ -89,17 +86,11 @@ def _apply_persisted_settings(persisted: dict):
 # Apply persisted settings
 _apply_persisted_settings(load_settings())
 
-# Ensure root dirs exist
-Config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-Config.THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
-# Ensure default group dirs exist
-(Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
-(Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
-# Ensure staging dir exists and clean leftover files from last run
-Config.STAGING_DIR.mkdir(parents=True, exist_ok=True)
+# Ensure the storage dirs (root + default group + staging) exist.
+Config.ensure_dirs()
 
 # Register MIME types.
-# Windows resolves extensions via the registry, which on a fresh install machine
+# Windows resolves extensions via the registry, which on a fresh installation machine
 # may lack these mappings (or map them wrong) — so we register them explicitly to
 # guarantee the correct Content-Type regardless of the host. Without the .svg
 # entry, favicon.svg is served with a wrong/empty type and browsers refuse to
@@ -117,11 +108,6 @@ from utils import (  # noqa: E402
     get_local_ip,
     is_port_available,
 )
-
-# ── Dynamic CORS ─────────────────────────────────
-# Cross-origin requests are allowed only from the configured port allowlist.
-# The check runs per-request (reads Config live), so updating the allowlist
-# via /api/settings/allowed-ports takes effect immediately — no restart.
 
 _LOCAL_IP = get_local_ip()
 
@@ -143,30 +129,6 @@ def _read_app_version() -> str:
 _APP_VERSION = _read_app_version()
 
 
-def _allowed_origins() -> set:
-    """Build the set of permitted Origin values from the port allowlist."""
-    hosts = {"localhost", "127.0.0.1"}
-    if _LOCAL_IP:
-        hosts.add(_LOCAL_IP)
-    origins = set()
-    for port in Config.ALLOWED_ORIGIN_PORTS:
-        for host in hosts:
-            origins.add(f"http://{host}:{port}")
-            origins.add(f"https://{host}:{port}")
-    return origins
-
-
-@app.after_request
-def _apply_cors(resp):
-    origin = request.headers.get("Origin")
-    if origin and origin in _allowed_origins():
-        resp.headers["Access-Control-Allow-Origin"] = origin
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        resp.headers.setdefault("Vary", "Origin")
-    return resp
-
-
 # ── Staging (upload confirmation) ─────────────────
 
 # Register this module as 'app' so staging.py's 'from app import app' works
@@ -181,7 +143,7 @@ from routes import register_blueprints  # noqa: E402
 
 register_blueprints(app)
 
-_http_server = None  # Set by make_server in _serve_forever()
+_http_server: "BaseWSGIServer | None" = None  # Set by make_server in _serve_forever()
 
 # ── Page Routes ─────────────────────────────────
 
@@ -219,7 +181,6 @@ def api_get_settings():
             "port": Config.PORT,
             "staging_timeout": Config.STAGING_TIMEOUT,
             "theme": getattr(Config, "THEME", "auto"),
-            "allowed_origin_ports": Config.ALLOWED_ORIGIN_PORTS,
         }
     )
 
@@ -312,7 +273,7 @@ def api_update_data_dir():
     except Exception as e:
         return jsonify({"error": f"Cannot write to directory: {str(e)}"}), 400
 
-    migration_log = {"moved_uploads": 0, "moved_thumbnails": 0, "groups": []}
+    migration_log: dict[str, Any] = {"moved_uploads": 0, "moved_thumbnails": 0, "groups": []}
 
     # Hold the lock across the whole migration + Config switch so a second
     # migration (or a restart-triggered switch) can't interleave with this one.
@@ -360,6 +321,7 @@ def api_update_data_dir():
             for p in [Config.THUMBNAIL_DIR, Config.UPLOAD_DIR]:
                 if p.exists():
                     try:
+                        child: Path
                         for child in sorted(p.iterdir(), reverse=True):
                             if child.is_dir():
                                 try:
@@ -373,14 +335,9 @@ def api_update_data_dir():
         except Exception as e:
             migration_log["error"] = str(e)
 
-        # Switch at runtime
-        Config.DATA_DIR = new_root
-        Config.UPLOAD_DIR = new_upload
-        Config.THUMBNAIL_DIR = new_thumb
-
-        # Ensure default group exists in new location
-        (Config.UPLOAD_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
-        (Config.THUMBNAIL_DIR / Config.DEFAULT_GROUP).mkdir(parents=True, exist_ok=True)
+        # Switch at runtime, then ensure the storage dirs exist in the new root.
+        Config.set_data_dir(new_root)
+        Config.ensure_dirs()
 
         save_settings({"data_dir": str(new_root)})
 
@@ -410,6 +367,9 @@ def api_update_staging_timeout():
         return jsonify({"error": "staging_timeout is required"}), 400
 
     try:
+        # new_timeout is guaranteed non-None above; PyCharm can't narrow the
+        # Any from request JSON, hence the suppression.
+        # noinspection PyTypeChecker
         timeout = int(new_timeout)
         if timeout < 10 or timeout > 3600:
             return jsonify({"error": "Staging timeout must be between 10 and 3600 seconds"}), 400
@@ -431,6 +391,9 @@ def api_update_port():
         return jsonify({"error": "port is required"}), 400
 
     try:
+        # new_port is guaranteed non-None above; PyCharm can't narrow the
+        # Any from request JSON, hence the suppression.
+        # noinspection PyTypeChecker
         port = int(new_port)
         if port < 1024 or port > 65535:
             return jsonify({"error": "Port must be between 1024 and 65535"}), 400
@@ -448,32 +411,6 @@ def api_update_port():
         return jsonify({"success": True, "saved_port": port, "_applied_on_restart": True})
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid port value"}), 400
-
-
-@app.route("/api/settings/allowed-ports", methods=["PUT"])
-@local_only
-def api_update_allowed_ports():
-    """Update the CORS origin port allowlist. Applies immediately (no restart)."""
-    data = request.get_json(silent=True) or {}
-    ports = data.get("allowed_origin_ports")
-
-    if not isinstance(ports, list):
-        return jsonify({"error": "allowed_origin_ports must be a list"}), 400
-
-    clean = []
-    for p in ports:
-        try:
-            pi = int(p)
-        except (ValueError, TypeError):
-            return jsonify({"error": f"Invalid port: {p}"}), 400
-        if pi < 1 or pi > 65535:
-            return jsonify({"error": f"Port out of range: {pi}"}), 400
-        if pi not in clean:
-            clean.append(pi)
-
-    Config.ALLOWED_ORIGIN_PORTS = clean
-    save_settings({"allowed_origin_ports": clean})
-    return jsonify({"success": True, "allowed_origin_ports": clean})
 
 
 @app.route("/api/settings/theme", methods=["PUT"])
@@ -544,7 +481,7 @@ def api_shutdown():
         Config.PORT = int(_pending["port"])
     if _http_server is not None:
         srv = _http_server
-        threading.Timer(0.5, lambda: srv.shutdown() if srv else None).start()
+        threading.Timer(0.5, srv.shutdown).start()
     return jsonify({"success": True})
 
 
@@ -558,14 +495,14 @@ def api_status():
 
 
 @app.errorhandler(413)
-def request_entity_too_large(e):
+def request_entity_too_large(_e):
     return jsonify(
         {"error": f"File too large. Maximum: {Config.MAX_CONTENT_LENGTH // (1024 * 1024)} MB"}
     ), 413
 
 
 @app.errorhandler(404)
-def page_not_found(e):
+def page_not_found(_e):
     if request.path.startswith("/api/"):
         return jsonify({"error": "Endpoint not found"}), 404
     return _render_index(), 404
@@ -663,8 +600,9 @@ def _serve_tray():
     from werkzeug.serving import make_server
 
     global _http_server
-    _http_server = make_server(Config.HOST, Config.PORT, app, threaded=True)
-    _http_server.serve_forever()
+    server = make_server(Config.HOST, Config.PORT, app, threaded=True)
+    _http_server = server
+    server.serve_forever()
 
 
 def main_console():
@@ -695,14 +633,17 @@ def main_tray():
     server_thread = threading.Thread(target=run_with_restart, daemon=True)
     server_thread.start()
 
-    # Run tray in main thread (blocking)
+    # Run tray in main thread (blocking). Import and use are split so the
+    # import sits alone in the try and the usage runs only on success (else).
     try:
+        # Used in the else branch below; PyCharm misses try/else data flow.
+        # noinspection PyUnresolvedReferences
         import tray
-
-        tray.run_tray(lambda: Config.PORT, server_stopped=server_stopped)
     except ImportError as e:
         print(f"Tray unavailable ({e}), falling back to console mode.")
         server_stopped.set()
+    else:
+        tray.run_tray(lambda: Config.PORT, server_stopped=server_stopped)
     # Tray exited — clean up the server thread
     server_stopped.set()
     server_thread.join(timeout=2)

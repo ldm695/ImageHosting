@@ -9,7 +9,7 @@ from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
 from config import Config
-from helpers import group_error, safe_or_error, with_query_group
+from helpers import get_request_files, group_error, safe_or_error, with_query_group
 from utils import (
     allowed_file,
     delete_tag_entry,
@@ -27,6 +27,34 @@ from utils import (
 )
 
 bp = Blueprint("images", __name__)
+
+
+# ── Private helpers ───────────────────────────────
+
+
+def _parse_json_list(raw: str) -> list:
+    """Parse a JSON-encoded list from a form field; return [] on any failure."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def _validate_batch_file(filename: str, group: str) -> tuple[str, str | None]:
+    """Validate *filename* and confirm the upload file exists for *group*.
+
+    Returns ``(safe, None)`` on success, or ``(safe, error_message)`` on
+    failure (``safe`` is ``""`` when the name itself is invalid).
+    """
+    safe = secure_filename(filename)
+    if not safe:
+        return "", "Invalid filename"
+    if not (Config.UPLOAD_DIR / group / safe).exists():
+        return safe, "Not found"
+    return safe, None
 
 
 # ── Listing ──────────────────────────────────────
@@ -47,40 +75,17 @@ def api_images(group):
 @with_query_group
 def api_upload(group):
     """Upload images (single or multiple, to a specific group)"""
-    ensure_group_dirs(group)
-
-    if "files" not in request.files:
-        return jsonify({"error": "No file data in request"}), 400
-
-    files = request.files.getlist("files")
-    files = [f for f in files if f and f.filename and f.filename.strip()]
-
-    if not files:
-        return jsonify({"error": "Please select files to upload"}), 400
+    files, err = get_request_files(group)
+    if err:
+        return err
 
     # Optional custom filenames (JSON array, one per file, by index)
-    custom_names = []
-    raw = request.form.get("filenames", "")
-    if raw:
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, list):
-                custom_names = parsed
-        except (json.JSONDecodeError, TypeError):
-            pass
+    custom_names = _parse_json_list(request.form.get("filenames", ""))
 
     # Optional tags: a single `tag` applies to all files; a `tags` JSON
     # array assigns per-file tags by index (takes precedence over `tag`).
     default_tag = (request.form.get("tag", "") or "").strip()
-    per_file_tags = []
-    raw_tags = request.form.get("tags", "")
-    if raw_tags:
-        try:
-            parsed = json.loads(raw_tags)
-            if isinstance(parsed, list):
-                per_file_tags = parsed
-        except (json.JSONDecodeError, TypeError):
-            pass
+    per_file_tags = _parse_json_list(request.form.get("tags", ""))
 
     if default_tag:
         ok, err = validate_tag(default_tag)
@@ -91,10 +96,13 @@ def api_upload(group):
     errors = []
 
     for i, file in enumerate(files):
-        if not allowed_file(file.filename):
+        # filename is non-empty here (filtered above); bind it as str so the
+        # type checker stops treating it as Optional through the loop body.
+        fname: str = file.filename or ""
+        if not allowed_file(fname):
             errors.append(
                 {
-                    "filename": file.filename,
+                    "filename": fname,
                     "error": (
                         "Unsupported format. Allowed: "
                         f"{', '.join(sorted(Config.ALLOWED_EXTENSIONS))}"
@@ -105,8 +113,8 @@ def api_upload(group):
 
         # Determine effective filename (custom name if provided)
         # Make sure extension is preserved from the original file
-        _, orig_ext = os.path.splitext(file.filename)
-        use_name = file.filename
+        _, orig_ext = os.path.splitext(fname)
+        use_name = fname
         if i < len(custom_names) and custom_names[i]:
             cn = custom_names[i].strip()
             if cn:
@@ -121,7 +129,7 @@ def api_upload(group):
         if not safe or safe != use_name:
             errors.append(
                 {
-                    "filename": file.filename,
+                    "filename": fname,
                     "error": (
                         "Filename contains invalid or unsafe characters. Use only "
                         "letters, numbers, dots, underscores, and hyphens."
@@ -193,7 +201,7 @@ def api_delete_image(filename, group):
     if thumbpath.exists():
         try:
             thumbpath.unlink()
-        except Exception:
+        except OSError:
             pass
 
     return jsonify({"success": True, "filename": safe})
@@ -244,7 +252,7 @@ def api_rename_image(filename, group):
     if old_thumb.exists():
         try:
             old_thumb.rename(new_thumb)
-        except Exception:
+        except OSError:
             pass
 
     info = get_image_info(safe_new, group)
@@ -335,7 +343,7 @@ def api_move_image(filename):
     if src_thumb.exists():
         try:
             src_thumb.rename(dst_thumb)
-        except Exception:
+        except OSError:
             pass
 
     # Sync tag entry
@@ -391,24 +399,19 @@ def api_batch_delete():
     results = {"deleted": [], "errors": []}
 
     for filename in files:
-        safe = secure_filename(filename)
-        if not safe:
-            results["errors"].append({"filename": filename, "error": "Invalid filename"})
-            continue
-
-        filepath = Config.UPLOAD_DIR / group / safe
-        if not filepath.exists():
-            results["errors"].append({"filename": filename, "error": "Not found"})
+        safe, errmsg = _validate_batch_file(filename, group)
+        if errmsg:
+            results["errors"].append({"filename": filename, "error": errmsg})
             continue
 
         try:
-            filepath.unlink()
+            (Config.UPLOAD_DIR / group / safe).unlink()
             thumbpath = Config.THUMBNAIL_DIR / group / safe
             if thumbpath.exists():
                 thumbpath.unlink()
             delete_tag_entry(group, safe)
             results["deleted"].append(filename)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - per-file resilience; surfaced in results
             results["errors"].append({"filename": filename, "error": str(e)})
 
     return jsonify({"success": True, **results})
@@ -486,20 +489,15 @@ def api_batch_tag():
     results = {"tagged": [], "errors": []}
 
     for filename in files:
-        safe = secure_filename(filename)
-        if not safe:
-            results["errors"].append({"filename": filename, "error": "Invalid filename"})
-            continue
-
-        filepath = Config.UPLOAD_DIR / group / safe
-        if not filepath.exists():
-            results["errors"].append({"filename": filename, "error": "Not found"})
+        safe, errmsg = _validate_batch_file(filename, group)
+        if errmsg:
+            results["errors"].append({"filename": filename, "error": errmsg})
             continue
 
         try:
             save_tag(group, safe, tag)
             results["tagged"].append(filename)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - per-file resilience; surfaced in results
             results["errors"].append({"filename": filename, "error": str(e)})
 
     return jsonify({"success": True, "tag": tag, **results})
